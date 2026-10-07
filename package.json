@@ -1,0 +1,70 @@
+{
+  "name": "manul-studio",
+  "productName": "Manul Studio",
+  "version": "0.1.0",
+  "description": "A desktop IDE for Manul Browser: write .hunt files, run them with live results, step through them, and look at the page they drive.",
+  "license": "Apache-2.0",
+  "author": "Oleksii Poliakov",
+  "private": true,
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "npm run build && electron .",
+    "test": "tsc -p tsconfig.test.json && node --test \"out-test/test/*.test.js\"",
+    "smoke": "npm run build && electron . --smoke",
+    "dsl": "node scripts/sync-dsl.mjs",
+    "dist": "node scripts/build.mjs --production && electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "manul-browser": "^0.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^44.6.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "monaco-editor": "^0.57.0",
+    "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "io.github.alexbeatnik.manul-studio",
+    "productName": "Manul Studio",
+    "copyright": "Copyright © 2026 Oleksii Poliakov",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "data/**/*",
+      "package.json",
+      "LICENSE"
+    ],
+    "asarUnpack": [
+      "node_modules/@manul-browser/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "ManulStudio-Setup-${version}.${ext}",
+      "shortcutName": "Manul Studio"
+    }
+  }
+}

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:"
+    />
+    <title>Manul Studio</title>
+    <link rel="stylesheet" href="renderer.css" />
+  </head>
+  <body>
+    <header id="toolbar">
+      <div class="group">
+        <button id="open-folder" title="Open a folder (Ctrl+O)">Open Folder</button>
+      </div>
+      <div class="group" id="run-controls">
+        <button id="run" class="primary" title="Run the file (F5)">&#9654; Run</button>
+        <button id="debug" title="Run and stop at breakpoints (F6)">Debug</button>
+        <button id="step-through" title="Pause before every step (F7)">Step Through</button>
+      </div>
+      <div class="group hidden" id="debug-controls">
+        <button id="continue" class="primary" title="Run on to the next breakpoint (F5)">&#9654; Continue</button>
+        <button id="next" title="Run this step and pause at the next (F10)">Step</button>
+        <button id="explain" title="Show what this step would act on, without running it">Explain</button>
+      </div>
+      <div class="group">
+        <button id="stop" class="danger" title="Stop the run (Shift+F5)" disabled>&#9632; Stop</button>
+      </div>
+      <div class="spacer"></div>
+      <div class="group">
+        <label title="The browser hunts run in">
+          Browser
+          <select id="browser">
+            <option value="chromium">Chromium</option>
+            <option value="firefox">Firefox</option>
+          </select>
+        </label>
+        <label title="Run without a visible browser window"><input type="checkbox" id="headless" /> Headless</label>
+        <label title="When a run records a screenshot of the page">
+          Screenshots
+          <select id="screenshots">
+            <option value="on-fail">on failure</option>
+            <option value="always">every step</option>
+            <option value="none">never</option>
+          </select>
+        </label>
+      </div>
+      <button id="engine" class="quiet" title="The engine hunts run on">engine…</button>
+    </header>
+
+    <main id="workbench">
+      <aside id="sidebar">
+        <nav class="tabs" data-tabs="sidebar">
+          <button data-tab="files" class="active">Files</button>
+          <button data-tab="steps">Steps</button>
+        </nav>
+        <section id="files" class="pane active">
+          <div class="pane-actions">
+            <span id="workspace-name" class="dim"></span>
+            <button id="new-file" class="quiet" title="New file (Ctrl+N)">+ New</button>
+          </div>
+          <div id="tree" class="tree"></div>
+        </section>
+        <section id="steps" class="pane">
+          <input id="palette-filter" type="search" placeholder="Filter steps" />
+          <div id="palette"></div>
+        </section>
+      </aside>
+
+      <div class="splitter" data-resize="sidebar"></div>
+
+      <section id="center">
+        <div id="editor-tabs" class="file-tabs"></div>
+        <div id="editor-host">
+          <div id="welcome">
+            <h1>Manul Studio</h1>
+            <p>Write browser automation in plain English, run it, and watch what it does.</p>
+            <p><button id="welcome-open" class="primary">Open a folder</button></p>
+            <p class="dim">A folder with <code>.hunt</code> files, or an empty one to start in.</p>
+          </div>
+          <div id="editor"></div>
+        </div>
+        <div class="splitter horizontal" data-resize="bottom"></div>
+        <section id="bottom">
+          <nav class="tabs" data-tabs="bottom">
+            <button data-tab="results" class="active">Results</button>
+            <button data-tab="output">Output</button>
+            <button data-tab="variables">Variables</button>
+            <button data-tab="explain-pane">Explain</button>
+            <span class="spacer"></span>
+            <span id="run-summary" class="dim"></span>
+          </nav>
+          <section id="results" class="pane active"></section>
+          <section id="output" class="pane"><pre id="log"></pre></section>
+          <section id="variables" class="pane"></section>
+          <section id="explain-pane" class="pane"></section>
+        </section>
+      </section>
+
+      <div class="splitter" data-resize="page"></div>
+
+      <aside id="page">
+        <div class="pane-actions">
+          <strong>Page</strong>
+          <span id="page-source" class="dim"></span>
+          <span class="spacer"></span>
+          <button id="live-toggle" title="Open a browser to explore and try steps in">Start live session</button>
+        </div>
+        <form id="address" class="hidden">
+          <input id="url" type="text" placeholder="https://… then Enter" spellcheck="false" />
+          <button id="live-refresh" type="button" class="quiet" title="Look at the page again">&#8635;</button>
+        </form>
+        <div id="shot-host"><div id="shot-empty" class="dim">No page yet. Start a live session, or run a file with screenshots on.</div><img id="shot" alt="" /></div>
+        <div class="splitter horizontal" data-resize="map"></div>
+        <div id="map-host">
+          <div class="pane-actions">
+            <input id="map-filter" type="search" placeholder="Filter elements" />
+          </div>
+          <div id="map"></div>
+        </div>
+      </aside>
+    </main>
+
+    <footer id="status">
+      <span id="status-text">Ready</span>
+      <span class="spacer"></span>
+      <span id="status-position"></span>
+    </footer>
+
+    <div id="dialog-backdrop" class="hidden"><div id="dialog"></div></div>
+    <script src="renderer.js"></script>
+  </body>
+</html>
