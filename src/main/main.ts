@@ -81,7 +81,7 @@ function createWindow(): BrowserWindow {
     minWidth: 980,
     minHeight: 600,
     backgroundColor: '#15171c',
-    title: 'Manul Studio',
+    title: 'Manul Browser Studio',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -111,7 +111,7 @@ function main(): void {
       browser: 'chromium',
       headless: true,
       screenshots: 'always',
-      enginePath: process.env.MANUL_STUDIO_ENGINE ?? '',
+      enginePath: process.env.MANUL_BROWSER_STUDIO_ENGINE ?? '',
     });
   }
   const settings = (): Settings => store.get();
@@ -188,7 +188,7 @@ function main(): void {
   app.on('window-all-closed', () => app.quit());
 
   if (smokeDir !== undefined) {
-    void runSmoke(window, smokeDir || path.join(app.getPath('temp'), 'manul-studio-smoke'))
+    void runSmoke(window, smokeDir || path.join(app.getPath('temp'), 'manul-browser-studio-smoke'))
       .catch((err: unknown) => {
         console.error(err);
         return 1;
@@ -213,7 +213,7 @@ function argAfter(flag: string): string | undefined {
 const smokeDir = argAfter('--smoke');
 // A smoke run must not read, or leave behind, a real user's settings — and
 // must be free to start while the app itself is open.
-if (smokeDir !== undefined) app.setPath('userData', path.join(app.getPath('temp'), 'manul-studio-smoke-profile'));
+if (smokeDir !== undefined) app.setPath('userData', path.join(app.getPath('temp'), 'manul-browser-studio-smoke-profile'));
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

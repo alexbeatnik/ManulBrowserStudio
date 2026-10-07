@@ -16,7 +16,7 @@ import { CLOSED_SNAPSHOT, LiveSnapshot, LiveStepOutcome, MapGroup, Settings } fr
 import { EngineService } from './engineService';
 
 /** The file name the preview screenshot is taken under, and removed from. */
-const PREVIEW = 'manul-studio-preview';
+const PREVIEW = 'manul-browser-studio-preview';
 
 /** How many elements of one landmark the page panel lists. */
 const MAP_BUDGET = 60;
@@ -46,7 +46,7 @@ export class LiveService {
         const settings = this.settings();
         // Steps run here resolve relative paths against the folder that is
         // open, as they would in a hunt run from it.
-        this.cwd = settings.workspace || fs.mkdtempSync(path.join(os.tmpdir(), 'manul-studio-'));
+        this.cwd = settings.workspace || fs.mkdtempSync(path.join(os.tmpdir(), 'manul-browser-studio-'));
         const { Session } = await import('manul-browser');
         this.session = await Session.launch({
           binary: engine.path,

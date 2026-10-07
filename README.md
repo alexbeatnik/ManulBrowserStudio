@@ -1,4 +1,4 @@
-# Manul Studio
+# Manul Browser Studio
 
 A desktop IDE for [Manul Browser](https://github.com/alexbeatnik/manul-browser):
 write `.hunt` files in plain English, run them, step through them, and look at
@@ -8,6 +8,10 @@ the page they drive.
 npm install
 npm start
 ```
+
+This is the Studio for the Go engine. The earlier Manul Studio, built for the
+Python ManulEngine, is a different program and lives in
+[ManulStudio](https://github.com/alexbeatnik/ManulStudio).
 
 Node 22 or newer. The engine comes with the `manul-browser` npm package this
 app depends on, so there is nothing else to install; a project that pins its
@@ -103,7 +107,7 @@ and does what a person would: runs a hunt against a local page, debugs it to a
 breakpoint, steps, asks for an explanation, runs a line in a live session and
 picks an element off the page. It writes screenshots and `report.json` to a
 temp folder (or `electron . --smoke <dir>`), and exits non-zero if any
-expectation failed. `MANUL_STUDIO_ENGINE` points it at a particular engine
+expectation failed. `MANUL_BROWSER_STUDIO_ENGINE` points it at a particular engine
 binary.
 
 ## Building the installer
@@ -112,13 +116,13 @@ binary.
 npm run dist
 ```
 
-builds `release/ManulStudio-Setup-<version>.exe`, a Windows x64 installer, and
+builds `release/ManulBrowserStudio-Setup-<version>.exe`, a Windows x64 installer, and
 `release/win-unpacked/`, the same app as a plain folder. The engine that came
 with the `manul-browser` dependency is packed in, so an installed Studio runs a
 bare folder of `.hunt` files with nothing else installed.
 
 The installer is not code-signed: Windows SmartScreen will say so the first
-time it is run. `release/win-unpacked/Manul Studio.exe --smoke <dir>` runs the
+time it is run. `release/win-unpacked/Manul Browser Studio.exe --smoke <dir>` runs the
 end-to-end check against the packaged app.
 
 ## Not there yet

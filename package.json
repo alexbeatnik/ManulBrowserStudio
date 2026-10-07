@@ -1,10 +1,15 @@
 {
-  "name": "manul-studio",
-  "productName": "Manul Studio",
+  "name": "manul-browser-studio",
+  "productName": "Manul Browser Studio",
   "version": "0.1.0",
   "description": "A desktop IDE for Manul Browser: write .hunt files, run them with live results, step through them, and look at the page they drive.",
   "license": "Apache-2.0",
   "author": "Oleksii Poliakov",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexbeatnik/ManulBrowserStudio"
+  },
+  "homepage": "https://github.com/alexbeatnik/ManulBrowserStudio",
   "private": true,
   "main": "dist/main.js",
   "engines": {
@@ -31,8 +36,8 @@
     "typescript": "^5.7.0"
   },
   "build": {
-    "appId": "io.github.alexbeatnik.manul-studio",
-    "productName": "Manul Studio",
+    "appId": "io.github.alexbeatnik.manul-browser-studio",
+    "productName": "Manul Browser Studio",
     "copyright": "Copyright © 2026 Oleksii Poliakov",
     "directories": {
       "output": "release",
@@ -63,8 +68,8 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "ManulStudio-Setup-${version}.${ext}",
-      "shortcutName": "Manul Studio"
+      "artifactName": "ManulBrowserStudio-Setup-${version}.${ext}",
+      "shortcutName": "Manul Browser Studio"
     }
   }
 }

@@ -111,7 +111,7 @@ class App {
     const hunt = this.editor.activeIsHunt;
     const idle = this.runState === 'idle';
 
-    document.title = workspace ? `${basename(workspace)} — Manul Studio` : 'Manul Studio';
+    document.title = workspace ? `${basename(workspace)} — Manul Browser Studio` : 'Manul Browser Studio';
     $('workspace-name').textContent = workspace ? basename(workspace) : 'No folder open';
     $<HTMLButtonElement>('new-file').disabled = !workspace;
 

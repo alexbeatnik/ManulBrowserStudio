@@ -347,7 +347,7 @@ export class EditorView {
       ? new monaco.Range(line, 1, line, here.length + 1)
       : new monaco.Range(pos.lineNumber, here.length + 1, pos.lineNumber, here.length + 1);
     this.editor.pushUndoStop();
-    this.editor.executeEdits('manul-studio', [
+    this.editor.executeEdits('manul-browser-studio', [
       { range, text: blank ? indent : `${model.getEOL()}${indent}`, forceMoveMarkers: true },
     ]);
     this.editor.setPosition({ lineNumber: line, column: indent.length + 1 });
@@ -362,7 +362,7 @@ export class EditorView {
     const at = this.openLine();
     if (!at) return;
     const column = at.indent.length + 1;
-    this.editor.executeEdits('manul-studio', [
+    this.editor.executeEdits('manul-browser-studio', [
       { range: new monaco.Range(at.line, column, at.line, column), text: step, forceMoveMarkers: true },
     ]);
     this.editor.pushUndoStop();
@@ -379,7 +379,7 @@ export class EditorView {
       | null;
     this.editor.focus();
     if (controller) controller.insert(snippet);
-    else this.editor.trigger('manul-studio', 'type', { text: snippet });
+    else this.editor.trigger('manul-browser-studio', 'type', { text: snippet });
   }
 
   format(): void {

@@ -71,7 +71,7 @@ export class EngineService {
       path: engine.path,
       version: engine.version,
       source: sourceLabel(engine.source),
-      detail: engine.source === 'setting' ? 'chosen in Manul Studio' : engine.detail,
+      detail: engine.source === 'setting' ? 'chosen in Manul Browser Studio' : engine.detail,
       failures,
     };
   }
