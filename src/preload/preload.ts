@@ -21,10 +21,18 @@ const api: StudioApi = {
   readFile: call('readFile'),
   writeFile: call('writeFile'),
   createFile: call('createFile'),
+  createFolder: call('createFolder'),
   createHookScript: call('createHookScript'),
   engine: call('engine'),
   catalogue: call('catalogue'),
   typeLibraries: call('typeLibraries'),
+  runtime: call('runtime'),
+  packages: call('packages'),
+  installPackages: call('installPackages'),
+  removePackage: call('removePackage'),
+  onPackageLog: (listener) => {
+    ipcRenderer.on('studio:packageLog', (_e, line: string) => listener(line));
+  },
   startRun: call('startRun'),
   stopRun: call('stopRun'),
   debug: call('debug'),

@@ -117,9 +117,27 @@ export interface TypeLibrary {
   content: string;
 }
 
+/** A library the open folder's package.json names. */
+export interface InstalledPackage {
+  name: string;
+  /** The range package.json asks for. */
+  wanted: string;
+  /** What is in node_modules; '' when it is not installed. */
+  version: string;
+  dev: boolean;
+}
+
+/** The Node the app carries, and what came with it. */
+export interface RuntimeInfo {
+  node: string;
+  electron: string;
+  npm: string;
+}
+
 export type MenuCommand =
   | 'open-folder'
   | 'new-file'
+  | 'new-folder'
   | 'new-hooks'
   | 'save'
   | 'run'
@@ -142,6 +160,8 @@ export interface StudioApi {
   writeFile(file: string, text: string): Promise<void>;
   /** Creates an empty file in `dir`; resolves to its path. */
   createFile(dir: string, name: string): Promise<string>;
+  /** Creates a folder in `dir`; resolves to its path. */
+  createFolder(dir: string, name: string): Promise<string>;
   /** Creates a starter hook script at the top of the open folder; resolves to its path. */
   createHookScript(): Promise<string>;
 
@@ -149,6 +169,14 @@ export interface StudioApi {
   catalogue(): Promise<CatalogueView>;
   /** Declarations for JavaScript and TypeScript completion. */
   typeLibraries(): Promise<TypeLibrary[]>;
+
+  runtime(): Promise<RuntimeInfo>;
+  packages(): Promise<InstalledPackage[]>;
+  /** Installs what was typed with npm, into the open folder. Resolves to npm's exit code. */
+  installPackages(text: string): Promise<number>;
+  removePackage(name: string): Promise<number>;
+  /** npm's output, a line at a time. */
+  onPackageLog(listener: (line: string) => void): void;
 
   startRun(request: RunRequest): Promise<void>;
   stopRun(): Promise<void>;

@@ -90,6 +90,9 @@ interface Snapshot {
   breakpoints: number[];
   paletteEntries: number;
   fileIcons: number;
+  folders: string[];
+  node: string;
+  libraries: string[];
   huntIcons: number;
   tabIcons: number;
   log: string;
@@ -238,6 +241,44 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
       onProcess.slice(0, 6).join(', ') || 'nothing offered',
     );
     await shoot('5-hooks');
+
+    // ── folders, and libraries for hook scripts ─────────────────────────────
+    s = await snapshot();
+    check('the status bar says which Node the app carries', /^Node \d+\.\d+\.\d+$/.test(s.node), s.node);
+
+    await command('new-folder');
+    await js(`(() => {
+      const input = document.querySelector('#dialog input');
+      input.value = 'flows';
+      input.form.requestSubmit();
+    })()`);
+    s = await until('the new folder to be listed', (x) => x.folders.some((f) => f.includes('flows')), 10_000);
+    check('a folder can be created from the tree', fs.statSync(path.join(workspace, 'flows')).isDirectory());
+
+    await js(`(() => {
+      document.querySelector('[data-tab="libraries"]').click();
+      const input = document.querySelector('#lib-name');
+      input.value = 'ms@2.1.3';
+      input.form.requestSubmit();
+    })()`);
+    s = await until(
+      'npm to finish',
+      (x) => x.status === 'Libraries updated' || x.status.startsWith('npm failed'),
+      180_000,
+    );
+    // The one check here that needs the network; without it there is nothing
+    // to conclude about the app.
+    if (/ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|ENETUNREACH/.test(s.log)) {
+      console.log('note the library was not installed: the registry could not be reached');
+    } else {
+      check(
+        'a library is installed with the built-in npm, on the built-in Node',
+        s.libraries.some((l) => l.includes('ms') && l.includes('2.1.3')) &&
+          fs.existsSync(path.join(workspace, 'node_modules', 'ms', 'package.json')),
+        s.libraries.join(' | ') || s.log.slice(-400),
+      );
+    }
+    await shoot('6-libraries');
   } catch (err) {
     failure = (err as Error).message;
     check('the smoke run completes', false, failure);

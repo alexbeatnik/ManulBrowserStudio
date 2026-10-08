@@ -250,6 +250,9 @@ button:focus-visible {
 .tree .row.active {
   background: #2f3540;
 }
+.tree .row.target {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 .tree .row .twist {
   width: 12px;
   color: var(--dim);
@@ -261,6 +264,57 @@ button:focus-visible {
 }
 .tree .row.other {
   color: var(--dim);
+}
+
+/* ── libraries ────────────────────────────────────────────────────────────── */
+
+#libraries {
+  padding: 8px;
+}
+#lib-form {
+  display: flex;
+  gap: 6px;
+}
+#libraries .note {
+  margin: 8px 0 10px;
+  font-size: 12px;
+}
+#lib-runtime {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+}
+.lib {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.lib:hover {
+  background: var(--bg-hover);
+}
+.lib .name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib .version {
+  color: var(--dim);
+  font: 12px var(--mono);
+}
+.lib .version.missing {
+  color: var(--warn);
+}
+.lib .remove {
+  visibility: hidden;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.lib:hover .remove {
+  visibility: visible;
 }
 
 /* ── file icons ───────────────────────────────────────────────────────────── */

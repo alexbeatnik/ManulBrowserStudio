@@ -10,6 +10,7 @@ import { hookTemplate, HOOK_BASENAMES } from '../core/hooks';
 import { EngineService } from './engineService';
 import { builtInNode } from './hookRuntime';
 import { LiveService } from './live';
+import { PackageService } from './packages';
 import { RunService } from './runs';
 import { SettingsStore } from './settings';
 import { runSmoke } from './smoke';
@@ -29,6 +30,7 @@ function buildMenu(): Menu {
       submenu: [
         { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: menu('open-folder') },
         { label: 'New File…', accelerator: 'CmdOrCtrl+N', click: menu('new-file') },
+        { label: 'New Folder…', accelerator: 'CmdOrCtrl+Shift+N', click: menu('new-folder') },
         { label: 'New Hook Script', click: menu('new-hooks') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: menu('save') },
@@ -133,6 +135,13 @@ function main(): void {
     () => builtInNode(path.join(app.getPath('userData'), 'hook-runtime'), process.execPath, engineRoot),
   );
   const live = new LiveService(engines, settings);
+  // npm keeps its dependencies inside its own folder, which the packager
+  // leaves behind; an installed app carries the folder whole, as a resource
+  // beside the archive (scripts/after-pack.cjs puts it there).
+  const npmDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'npm')
+    : path.join(appRoot, 'node_modules', 'npm');
+  const packages = new PackageService(settings, npmDir, (line) => send('studio:packageLog', line));
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void => {
     ipcMain.handle(`studio:${channel}`, (_event, ...args) => fn(...(args as A)));
@@ -168,6 +177,7 @@ function main(): void {
   handle('readFile', (file: string) => workspace.read(file));
   handle('writeFile', (file: string, text: string) => workspace.write(file, text));
   handle('createFile', (dir: string, name: string) => workspace.create(dir, name));
+  handle('createFolder', (dir: string, name: string) => workspace.mkdir(dir, name));
   handle('createHookScript', async () => {
     const folder = settings().workspace;
     if (!folder) throw new Error('Open a folder first.');
@@ -188,6 +198,11 @@ function main(): void {
     const catalogue = await engines.catalogue();
     return { catalogue, groups: grouped(catalogue) };
   });
+
+  handle('runtime', () => packages.runtime());
+  handle('packages', () => packages.list());
+  handle('installPackages', (text: string) => packages.install(text));
+  handle('removePackage', (name: string) => packages.remove(name));
 
   handle('startRun', (request: RunRequest) => runs.start(request));
   handle('stopRun', () => runs.stop());

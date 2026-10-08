@@ -8,12 +8,13 @@ import type { CatalogueEntry } from '../core/catalogue';
 import type { BrowserName, MenuCommand, RunEvent, ScreenshotMode, Settings } from '../shared/api';
 import { runnableLine, stepForElement, verifyForElement } from '../shared/steps';
 import { ask, choose, tell } from './dialogs';
-import { $, basename, clear, dirname, duration, h, resizable, studio, tabs } from './dom';
+import { $, basename, clear, duration, h, resizable, studio, tabs } from './dom';
 import { EditorView } from './editor';
 import { Explorer } from './explorer';
 import { registerHunt, setCatalogue } from './hunt';
 import { MANUL_ICON } from './icons';
 import { completionsAt, setUpScriptLanguages } from './languages';
+import { Libraries } from './libraries';
 import { PagePanel } from './page';
 import { Panels, stoppedByAuthor } from './panels';
 
@@ -32,6 +33,7 @@ class App {
   private readonly explorer: Explorer;
   private readonly panels: Panels;
   private readonly page: PagePanel;
+  private readonly libraries: Libraries;
   private readonly showBottom: (pane: string) => void;
   private readonly showSidebar: (pane: string) => void;
 
@@ -46,7 +48,11 @@ class App {
 
   constructor() {
     registerHunt();
-    this.showBottom = tabs(document.querySelector<HTMLElement>('[data-tabs="bottom"]')!);
+    this.showBottom = tabs(document.querySelector<HTMLElement>('[data-tabs="bottom"]')!, (pane) => {
+      // A hidden pane cannot be scrolled, so what was logged meanwhile left
+      // it at the top; the news is at the other end.
+      if (pane === 'output') $('output').scrollTop = $('output').scrollHeight;
+    });
     this.showSidebar = tabs(document.querySelector<HTMLElement>('[data-tabs="sidebar"]')!);
 
     this.editor = new EditorView($('editor'), $('editor-tabs'), {
@@ -74,6 +80,13 @@ class App {
       onError: (message) => void tell('Live session', message),
     });
 
+    this.libraries = new Libraries({
+      onStart: () => this.showBottom('output'),
+      onStatus: (text) => this.status(text),
+      onError: (title, message) => void tell(title, message),
+    });
+    studio.onPackageLog((line) => this.panels.addLog(line));
+
     $<HTMLImageElement>('welcome-logo').src = MANUL_ICON;
     this.wireToolbar();
     this.wireKeys();
@@ -100,6 +113,8 @@ class App {
     this.refreshChrome();
     await this.loadEngine();
     this.loadScriptTypes();
+    void this.libraries.showRuntime();
+    void this.libraries.refresh(this.settings.workspace);
   }
 
   /**
@@ -126,6 +141,7 @@ class App {
     document.title = workspace ? `${basename(workspace)} — Manul Browser Studio` : 'Manul Browser Studio';
     $('workspace-name').textContent = workspace ? basename(workspace) : 'No folder open';
     $<HTMLButtonElement>('new-file').disabled = !workspace;
+    $<HTMLButtonElement>('new-folder').disabled = !workspace;
 
     for (const id of ['run', 'debug', 'step-through']) $<HTMLButtonElement>(id).disabled = !idle || !hunt;
     $('run-controls').classList.toggle('hidden', this.runState === 'paused');
@@ -231,6 +247,7 @@ class App {
     this.refreshChrome();
     await this.loadEngine();
     this.loadScriptTypes();
+    void this.libraries.refresh(folder);
   }
 
   async openFile(file: string): Promise<void> {
@@ -259,15 +276,32 @@ class App {
     const typed = await ask('New file', 'checkout.hunt', 'untitled.hunt');
     if (!typed) return;
     const name = /\.[A-Za-z0-9]+$/.test(typed) ? typed : `${typed}.hunt`;
-    // Beside the file in front, or at the top of the folder.
-    const dir = this.editor.activePath ? dirname(this.editor.activePath) : this.settings.workspace;
+    // In the folder last clicked, beside the file in front, or at the top.
+    const dir = this.explorer.targetDir();
     try {
       const file = await studio.createFile(dir, name);
       if (name.toLowerCase().endsWith('.hunt')) await studio.writeFile(file, STARTER(name.replace(/\.hunt$/i, '')));
+      this.explorer.reveal(dir);
       await this.explorer.refresh();
       await this.openFile(file);
     } catch (err) {
       await tell('Could not create the file', reason(err));
+    }
+  }
+
+  private async newFolder(): Promise<void> {
+    if (!this.settings.workspace) return this.openFolder();
+    const name = await ask('New folder', 'flows');
+    if (!name) return;
+    const dir = this.explorer.targetDir();
+    try {
+      const folder = await studio.createFolder(dir, name);
+      // Open, so that it is seen, and what is created next goes into it.
+      this.explorer.reveal(folder);
+      this.explorer.setTarget(folder);
+      await this.explorer.refresh();
+    } catch (err) {
+      await tell('Could not create the folder', reason(err));
     }
   }
 
@@ -471,6 +505,8 @@ class App {
         return void this.openFolder();
       case 'new-file':
         return void this.newFile();
+      case 'new-folder':
+        return void this.newFolder();
       case 'new-hooks':
         return void this.newHooks();
       case 'save':
@@ -502,6 +538,7 @@ class App {
     on('open-folder', 'open-folder');
     on('welcome-open', 'open-folder');
     on('new-file', 'new-file');
+    on('new-folder', 'new-folder');
     on('run', 'run');
     on('debug', 'debug');
     on('step-through', 'step-through');
@@ -573,6 +610,9 @@ class App {
       breakpoints: this.editor.activePath ? this.editor.breakpoints(this.editor.activePath) : [],
       paletteEntries: document.querySelectorAll('#palette .entry').length,
       fileIcons: document.querySelectorAll('#tree .row .ficon').length,
+      folders: [...document.querySelectorAll<HTMLElement>('#tree .row[data-dir]')].map((r) => r.textContent ?? ''),
+      node: $('status-node').textContent ?? '',
+      libraries: [...document.querySelectorAll('#lib-list .lib')].map((r) => r.textContent ?? ''),
       huntIcons: document.querySelectorAll('#tree .row.hunt .ficon img').length,
       tabIcons: document.querySelectorAll('#editor-tabs .tab .ficon').length,
       log: $('log').textContent ?? '',

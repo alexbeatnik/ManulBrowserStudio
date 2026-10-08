@@ -54,17 +54,31 @@
         <nav class="tabs" data-tabs="sidebar">
           <button data-tab="files" class="active">Files</button>
           <button data-tab="steps">Steps</button>
+          <button data-tab="libraries">Libraries</button>
         </nav>
         <section id="files" class="pane active">
           <div class="pane-actions">
             <span id="workspace-name" class="dim"></span>
-            <button id="new-file" class="quiet" title="New file (Ctrl+N)">+ New</button>
+            <span class="spacer"></span>
+            <button id="new-file" class="quiet" title="New file (Ctrl+N)">+ File</button>
+            <button id="new-folder" class="quiet" title="New folder (Ctrl+Shift+N)">+ Folder</button>
           </div>
           <div id="tree" class="tree"></div>
         </section>
         <section id="steps" class="pane">
           <input id="palette-filter" type="search" placeholder="Filter steps" />
           <div id="palette"></div>
+        </section>
+        <section id="libraries" class="pane">
+          <form id="lib-form">
+            <input id="lib-name" type="text" placeholder="dayjs, lodash@4 …" spellcheck="false" />
+            <button id="lib-install" type="submit" class="primary">Install</button>
+          </form>
+          <p class="dim note">
+            Installed with npm into this folder, for its hook scripts to import.
+            <span id="lib-runtime"></span>
+          </p>
+          <div id="lib-list"></div>
         </section>
       </aside>
 
@@ -126,6 +140,7 @@
     <footer id="status">
       <span id="status-text">Ready</span>
       <span class="spacer"></span>
+      <span id="status-node"></span>
       <span id="status-position"></span>
     </footer>
 

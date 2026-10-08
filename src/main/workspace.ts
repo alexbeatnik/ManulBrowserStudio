@@ -45,12 +45,26 @@ export class Workspace {
     await fs.writeFile(this.guard(file), text, 'utf8');
   }
 
+  /** A name for one new entry: no separators, nothing a file system refuses. */
+  private entry(dir: string, name: string, kind: string): string {
+    const clean = name.trim();
+    if (!clean || clean === '.' || clean === '..' || /[\\/:*?"<>|]/.test(clean)) {
+      throw new Error(`"${name}" is not a ${kind} name`);
+    }
+    return this.guard(path.join(dir, clean));
+  }
+
   /** Creates an empty file and refuses to replace one that is there. */
   async create(dir: string, name: string): Promise<string> {
-    const clean = name.trim();
-    if (!clean || /[\\/:*?"<>|]/.test(clean)) throw new Error(`"${name}" is not a file name`);
-    const file = this.guard(path.join(dir, clean));
+    const file = this.entry(dir, name, 'file');
     await fs.writeFile(file, '', { encoding: 'utf8', flag: 'wx' });
     return file;
+  }
+
+  /** Creates a folder; one that is already there is an error, not a success. */
+  async mkdir(dir: string, name: string): Promise<string> {
+    const folder = this.entry(dir, name, 'folder');
+    await fs.mkdir(folder);
+    return folder;
   }
 }

@@ -11,6 +11,7 @@ import { parseHunt, StepLocator } from '../src/core/huntDoc';
 import { PAUSE_MARKER, VARS_MARKER, parseStdoutLine } from '../src/core/runner';
 import { builtInNode } from '../src/main/hookRuntime';
 import { isInside, Workspace } from '../src/main/workspace';
+import { isPackageName, parsePackageSpecs } from '../src/shared/packages';
 import { quote, runnableLine, stepForElement, verifyForElement } from '../src/shared/steps';
 
 // ── the debug protocol ──────────────────────────────────────────────────────
@@ -102,6 +103,56 @@ test('files outside the open folder are refused, and nothing is overwritten on c
 
   // Folders first, and nothing an explorer has no business listing.
   assert.deepEqual((await ws.list(root)).map((e) => e.name), ['flows', 'checkout.hunt']);
+});
+
+test('a folder is created once, inside the open folder, under a plain name', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-dirs-'));
+  const ws = new Workspace(() => root);
+
+  const made = await ws.mkdir(root, ' suites ');
+  assert.equal(made, path.join(root, 'suites'));
+  assert.ok(fs.statSync(made).isDirectory());
+  // Nested, by naming the folder it goes into.
+  assert.ok(fs.statSync(await ws.mkdir(made, 'checkout')).isDirectory());
+
+  await assert.rejects(ws.mkdir(root, 'suites'), /EEXIST/);
+  for (const name of ['', '.', '..', 'a/b', 'a\\b', 'what?']) {
+    await assert.rejects(ws.mkdir(root, name), /not a folder name/, name);
+  }
+  await assert.rejects(ws.mkdir(path.join(root, '..'), 'outside'), /outside the open folder/);
+});
+
+// ── libraries ───────────────────────────────────────────────────────────────
+
+test('what is typed for npm is package names and nothing else', () => {
+  assert.deepEqual(parsePackageSpecs('dayjs'), ['dayjs']);
+  assert.deepEqual(parsePackageSpecs('  lodash@4   @faker-js/faker@^9.0.0, ms@latest '), [
+    'lodash@4',
+    '@faker-js/faker@^9.0.0',
+    'ms@latest',
+  ]);
+
+  // It becomes arguments to npm: a flag, a path, a URL or a git reference is
+  // not a package name, whatever npm itself would make of it.
+  for (const text of [
+    '',
+    '--global dayjs',
+    '-g',
+    '../somewhere',
+    'C:\\tools\\pkg',
+    './local',
+    'https://example.com/pkg.tgz',
+    'git+ssh://git@github.com/a/b.git',
+    'user/repo',
+    'dayjs@',
+    'dayjs; rm -rf .',
+    '$(whoami)',
+  ]) {
+    assert.throws(() => parsePackageSpecs(text), /package/, text);
+  }
+
+  assert.equal(isPackageName('@scope/name'), true);
+  assert.equal(isPackageName('--save'), false);
 });
 
 // ── hook scripts ────────────────────────────────────────────────────────────

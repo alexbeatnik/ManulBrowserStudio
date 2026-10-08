@@ -33,6 +33,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "monaco-editor": "^0.57.0",
+    "npm": "^12.2.0",
     "typescript": "^5.7.0"
   },
   "build": {
@@ -71,6 +72,7 @@
       "allowToChangeInstallationDirectory": true,
       "artifactName": "ManulBrowserStudio-Setup-${version}.${ext}",
       "shortcutName": "Manul Browser Studio"
-    }
+    },
+    "afterPack": "scripts/after-pack.cjs"
   }
 }

@@ -2,12 +2,14 @@
 // opened and not before.
 
 import type { DirEntry } from '../shared/api';
-import { clear, h, studio } from './dom';
+import { clear, dirname, h, studio } from './dom';
 import { iconFor } from './icons';
 
 export class Explorer {
   private root = '';
   private active = '';
+  /** The folder last clicked, or the one of the file in front. */
+  private focus = '';
   private readonly expanded = new Set<string>();
 
   constructor(
@@ -17,13 +19,40 @@ export class Explorer {
 
   async setRoot(root: string): Promise<void> {
     this.root = root;
+    this.focus = '';
     this.expanded.clear();
     await this.refresh();
+  }
+
+  /** Where a new file or folder goes: the folder in focus, else the top. */
+  targetDir(): string {
+    return this.focus || this.root;
+  }
+
+  /** Opens a folder in the tree, and every folder above it. */
+  reveal(dir: string): void {
+    for (let d = dir; d.length > this.root.length; d = dirname(d)) this.expanded.add(d);
+  }
+
+  /** Makes a folder the one new files and folders go into. */
+  setTarget(dir: string): void {
+    this.focus = dir === this.root ? '' : dir;
+  }
+
+  private markTarget(): void {
+    for (const row of this.host.querySelectorAll<HTMLElement>('.row[data-dir]')) {
+      row.classList.toggle('target', row.dataset.dir === this.focus);
+    }
   }
 
   /** Marks the file whose tab is in front. */
   setActive(file: string | undefined): void {
     this.active = file ?? '';
+    if (file) {
+      const dir = dirname(file);
+      this.focus = dir === this.root ? '' : dir;
+      this.markTarget();
+    }
     for (const row of this.host.querySelectorAll<HTMLElement>('.row')) {
       row.classList.toggle('active', row.dataset.path === this.active);
     }
@@ -53,7 +82,18 @@ export class Explorer {
         const open = this.expanded.has(entry.path);
         const twist = h('span', { class: 'twist', text: open ? '▾' : '▸' });
         let icon = iconFor(entry.name, open ? 'folder-open' : 'folder');
-        const row = h('div', { class: 'row', style: `padding-left:${pad}`, title: entry.path }, twist, icon, entry.name);
+        const row = h(
+          'div',
+          {
+            class: `row${entry.path === this.focus ? ' target' : ''}`,
+            style: `padding-left:${pad}`,
+            title: entry.path,
+            'data-dir': entry.path,
+          },
+          twist,
+          icon,
+          entry.name,
+        );
         const setOpen = (now: boolean): void => {
           twist.textContent = now ? '▾' : '▸';
           const next = iconFor(entry.name, now ? 'folder-open' : 'folder');
@@ -61,6 +101,8 @@ export class Explorer {
           icon = next;
         };
         row.addEventListener('click', () => {
+          this.focus = entry.path;
+          this.markTarget();
           if (this.expanded.delete(entry.path)) {
             setOpen(false);
             clear(children);

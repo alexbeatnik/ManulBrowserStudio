@@ -33,6 +33,11 @@ binding, which then wins. In the editor such a script completes against the
 binding's types and Node's. A Python hook script (`manul_hooks.py`) is picked
 up too, and needs a Python with `manul-browser` installed.
 
+**Libraries.** The Libraries tab installs npm packages into the open folder
+for its hook scripts to import, and lists and removes the ones that are there.
+npm comes with the app and runs on the app's own Node — whose version is in
+the status bar — so this needs no Node on the machine either.
+
 **Other files.** Python, Go, JSON, HTML, CSS, Markdown and the rest are
 coloured; JavaScript and TypeScript have completion as well. Every kind of
 file has its icon in the tree and on its tab, and a hunt has Manul Browser's.
@@ -75,7 +80,9 @@ file never disturbs the page being explored.
 
 A run is started in the open folder, exactly as `manul run` would be from a
 terminal there, so it leaves what the CLI leaves: `reports/` with the run
-history and, when screenshots are on, `screenshots/`.
+history and, when screenshots are on, `screenshots/`. Installing a library
+leaves what `npm install` leaves: `package.json`, a lockfile and
+`node_modules/`.
 
 The verbs the editor knows come from `data/dsl.json`, a copy of the engine's
 DSL contract (`npm run dsl` regenerates it from a `manul-browser` checkout
@@ -120,7 +127,8 @@ npm run smoke       # the app checking itself, end to end
 `npm run smoke` opens the window, a real engine and a real (headless) browser,
 and does what a person would: runs a hunt against a local page, debugs it to a
 breakpoint, steps, asks for an explanation, runs a line in a live session and
-picks an element off the page. It writes screenshots and `report.json` to a
+picks an element off the page, creates a folder, and installs a library (the
+one step that needs the network; without it, it says so and moves on). It writes screenshots and `report.json` to a
 temp folder (or `electron . --smoke <dir>`), and exits non-zero if any
 expectation failed. `MANUL_BROWSER_STUDIO_ENGINE` points it at a particular engine
 binary.
@@ -143,7 +151,11 @@ end-to-end check against the packaged app.
 ## Not there yet
 
 - Windows x64 only, and unsigned; no macOS or Linux package.
-- One folder at a time, and no rename or delete in the file tree.
+- One folder at a time. Files and folders can be created in the tree, not
+  renamed or deleted.
+- A library installed for hook scripts is not known to the editor's
+  completion, and one that compiles native code may not build or load: the
+  app's Node is Electron's.
 - The page panel's picture is a full-page screenshot scaled to the panel, with
   no zoom, and elements cannot be picked by clicking on the picture.
 - Breakpoints changed while a run is in progress take effect on the next run.
