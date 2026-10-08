@@ -9,6 +9,7 @@ import { test } from 'node:test';
 
 import { parseHunt, StepLocator } from '../src/core/huntDoc';
 import { PAUSE_MARKER, VARS_MARKER, parseStdoutLine } from '../src/core/runner';
+import { builtInNode } from '../src/main/hookRuntime';
 import { isInside, Workspace } from '../src/main/workspace';
 import { quote, runnableLine, stepForElement, verifyForElement } from '../src/shared/steps';
 
@@ -101,4 +102,30 @@ test('files outside the open folder are refused, and nothing is overwritten on c
 
   // Folders first, and nothing an explorer has no business listing.
   assert.deepEqual((await ws.list(root)).map((e) => e.name), ['flows', 'checkout.hunt']);
+});
+
+// ── hook scripts ────────────────────────────────────────────────────────────
+
+test('the launcher starts the app as Node, with the resolver loaded first', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-node-'));
+  const exe = path.join(dir, 'Manul Browser Studio.exe');
+  const launcher = builtInNode(path.join(dir, 'runtime'), exe, path.join(dir, 'app'));
+  const text = fs.readFileSync(launcher, 'utf8');
+
+  assert.ok(text.includes('ELECTRON_RUN_AS_NODE=1'));
+  assert.ok(text.includes(`"${exe}"`), 'the executable is quoted: its path has spaces');
+  assert.ok(text.includes('--import "file:///'));
+  if (process.platform === 'win32') {
+    // Anything the launcher prints lands on the protocol's stdout.
+    assert.ok(text.startsWith('@echo off'));
+    assert.ok(text.includes('%*'));
+  }
+
+  const register = fs.readFileSync(path.join(dir, 'runtime', 'register.mjs'), 'utf8');
+  const resolver = fs.readFileSync(path.join(dir, 'runtime', 'resolve.mjs'), 'utf8');
+  assert.ok(register.includes('resolve.mjs'));
+  // The anchor is a file inside the folder whose node_modules has the binding.
+  assert.match(register, /anchor: "file:\/\/\/[^"]*app\/hooks\.mjs"/);
+  // The project's own copy is tried first; the app's is the fallback.
+  assert.ok(resolver.indexOf('nextResolve(specifier, context)') < resolver.indexOf('parentURL: anchor'));
 });

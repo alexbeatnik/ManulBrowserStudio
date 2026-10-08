@@ -51,7 +51,8 @@
       "LICENSE"
     ],
     "asarUnpack": [
-      "node_modules/@manul-browser/**"
+      "node_modules/@manul-browser/**",
+      "node_modules/manul-browser/**"
     ],
     "win": {
       "target": [

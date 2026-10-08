@@ -8,6 +8,7 @@
 import * as monaco from 'monaco-editor';
 import { basename, clear, h } from './dom';
 import { HUNT, THEME } from './hunt';
+import { iconFor } from './icons';
 
 // Monaco starts a worker per language service and asks where its script is.
 (self as unknown as { MonacoEnvironment: monaco.Environment }).MonacoEnvironment = {
@@ -185,6 +186,7 @@ export class EditorView {
           title: tab.path,
           onclick: () => this.activate(tab.path),
         },
+        iconFor(basename(tab.path)),
         h('span', { text: basename(tab.path) }),
         h('span', {
           class: 'close',

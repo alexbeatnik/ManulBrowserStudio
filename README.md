@@ -24,6 +24,19 @@ verb, header and block the DSL contract lists, snippets with placeholders,
 variable completion inside `{…}`, and a formatter (Shift+Alt+F). A step palette
 in the sidebar inserts any step on a line of its own.
 
+**Hook scripts.** A `manul_hooks.mjs` beside a hunt (File → New Hook Script
+writes a starter one) is picked up by every run of that hunt: suite hooks,
+`CALL HOST` handlers, custom controls. It runs on the Node that is built into
+the app and imports the `manul-browser` that came with it, so a folder of hunts
+needs neither Node nor `npm install` — unless it has its own copy of the
+binding, which then wins. In the editor such a script completes against the
+binding's types and Node's. A Python hook script (`manul_hooks.py`) is picked
+up too, and needs a Python with `manul-browser` installed.
+
+**Other files.** Python, Go, JSON, HTML, CSS, Markdown and the rest are
+coloured; JavaScript and TypeScript have completion as well. Every kind of
+file has its icon in the tree and on its tab, and a hunt has Manul Browser's.
+
 **Run with live results.** F5 runs the file. Each step is marked in the margin
 as it finishes, with its duration or its error written after the line; the
 Results panel lists the steps with their scores, and for a failed one the
@@ -82,7 +95,8 @@ everything else; the Variables panel just stays empty while it is paused.
 src/core/      Finding the engine, running a hunt, reading a .hunt file.
                Shared with ManulBrowserExtension — see below.
 src/shared/    Types that cross the process boundary; step templates.
-src/main/      The main process: files, settings, runs, the live session.
+src/main/      The main process: files, settings, runs, the live session,
+               the built-in Node for hook scripts.
 src/preload/   The one door between the window and the main process.
 src/renderer/  The window: editor, explorer, panels, page panel.
 data/dsl.json  The DSL catalogue.
@@ -91,8 +105,8 @@ test/          Unit tests for everything that needs no window.
 
 `src/core` began as a copy of
 [ManulBrowserExtension](https://github.com/alexbeatnik/ManulBrowserExtension)'s
-`src/core`, which has no dependency on VS Code. `engine.ts`, `huntDoc.ts` and
-`catalogue.ts` are unchanged; `runner.ts` has gained the `vars` marker. Until
+`src/core`, which has no dependency on VS Code. `engine.ts`, `huntDoc.ts`,
+`catalogue.ts` and `hooks.ts` are unchanged; `runner.ts` has gained the `vars` marker. Until
 the two share a package, a fix to one belongs in the other.
 
 ## Checking it
@@ -133,7 +147,9 @@ end-to-end check against the packaged app.
 - The page panel's picture is a full-page screenshot scaled to the panel, with
   no zoom, and elements cannot be picked by clicking on the picture.
 - Breakpoints changed while a run is in progress take effect on the next run.
-- Suite hooks (`--hooks`) and custom controls are not wired into runs.
+- Hook scripts are for runs of a file; the live session does not load them.
+- No completion for Python or Go: that takes a language server each (Pyright,
+  gopls), which the app does not carry.
 
 ## License
 

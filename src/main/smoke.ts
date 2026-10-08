@@ -1,8 +1,9 @@
 // `electron . --smoke [dir]`: the app checking itself, end to end.
 //
 // It opens a folder with one hunt and one local page in it, and does what a
-// person would: runs the file, debugs it to a breakpoint, steps, asks for an
-// explanation, and tries a line in a live session — through the same commands
+// person would: runs the file, with the hook script beside it, debugs it to a
+// breakpoint, steps, asks for an explanation, tries a line in a live session,
+// and asks for completion in the hook script — through the same commands
 // the menu sends, against a real engine and a real browser. What it saw goes
 // to `dir` as screenshots and a report, and the process exits non-zero if any
 // expectation failed.
@@ -29,17 +30,44 @@ const PAGE = `<!doctype html>
 </body></html>
 `;
 
+// A hook script as a person would write one. Nothing in the folder provides
+// `manul-browser` or a `node` to run it on; the app has to.
+const HOOKS = `import { beforeAll, call, serveHooks } from 'manul-browser';
+
+beforeAll((ctx) => {
+  ctx.variables.greeting = 'hello from hooks';
+});
+
+call('studio.shout', (ctx) => String(ctx.args[0]).toUpperCase());
+
+// stderr is the script's own; stdout belongs to the engine.
+console.error('hooks ready in', process.cwd());
+
+await serveHooks();
+`;
+
+/** The 1-based line and column just after the first occurrence of text in the hook script. */
+function afterInHooks(text: string): { line: number; column: number } {
+  const lines = HOOKS.split('\n');
+  const line = lines.findIndex((l) => l.includes(text));
+  return { line: line + 1, column: lines[line].indexOf(text) + text.length + 1 };
+}
+
 const hunt = (pageUrl: string): string => `@title: smoke
 @var: {who} = Ada
 
-STEP 1: Fill the form
+STEP 1: Hooks
+    CALL HOST studio.shout with args: "ada" into {loud}
+    PRINT "{loud} / {greeting}"
+
+STEP 2: Fill the form
     NAVIGATE to ${pageUrl}
     FILL 'Full name' field with '{who} Lovelace'
     SELECT 'Pro' from the 'Plan' dropdown
     CHECK the checkbox for 'Accept the terms'
     EXTRACT the 'Full name' into {typed}
 
-STEP 2: Submit
+STEP 3: Submit
     CLICK the 'Create account' button
     VERIFY that 'Welcome, Ada Lovelace!' is present
     CLICK the 'Remove everything' button
@@ -61,6 +89,10 @@ interface Snapshot {
   variables: number;
   breakpoints: number[];
   paletteEntries: number;
+  fileIcons: number;
+  huntIcons: number;
+  tabIcons: number;
+  log: string;
   hasShot: boolean;
 }
 
@@ -72,6 +104,8 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
   const huntFile = path.join(workspace, 'smoke.hunt');
   fs.writeFileSync(pageFile, PAGE);
   fs.writeFileSync(huntFile, hunt(pathToFileURL(pageFile).href));
+  const hooksFile = path.join(workspace, 'manul_hooks.mjs');
+  fs.writeFileSync(hooksFile, HOOKS);
 
   const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
   const check = (name: string, ok: boolean, detail = ''): void => {
@@ -110,6 +144,8 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
     await js(`window.__studio.openWorkspace(${JSON.stringify(workspace)})`);
     await js(`window.__studio.openFile(${JSON.stringify(huntFile)})`);
     s = await until('the file to open', (x) => x.active === huntFile, 10_000);
+    check('every file in the tree has an icon', s.fileIcons === 3, `${s.fileIcons} icons for 3 files`);
+    check('a hunt carries the Manul Browser mark, in the tree and on its tab', s.huntIcons === 1 && s.tabIcons === 1);
     await shoot('1-editor');
 
     // ── a plain run ─────────────────────────────────────────────────────────
@@ -117,20 +153,27 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
     await until('the run to start', (x) => x.runState !== 'idle', 15_000);
     s = await until('the run to end', (x) => x.runState === 'idle');
     await shoot('2-run');
-    check('every step of the run is reported', s.results === 8, `${s.results} results`);
+    check('every step of the run is reported', s.results === 10, `${s.results} results`);
+    check('the hook script beside the hunt is picked up', s.log.includes('manul_hooks.mjs'));
+    const printed = await js<string>(`document.querySelector('#results').textContent`);
+    check(
+      'the hook script runs on the built-in Node, with the built-in binding',
+      printed.includes('ADA / hello from hooks'),
+      printed.includes('ADA / hello from hooks') ? '' : printed.includes('ADA') ? 'CALL HOST answered, before_all did not' : s.log.slice(-400),
+    );
     check('the one step that cannot work is the one that fails', s.failed === 1, `${s.failed} failed`);
     check('a screenshot of the page is shown', s.hasShot);
 
     // ── debugging ───────────────────────────────────────────────────────────
-    await js('window.__studio.goto(7)'); // SELECT 'Pro' …
+    await js('window.__studio.goto(11)'); // SELECT 'Pro' …
     await command('breakpoint');
     s = await snapshot();
-    check('a breakpoint is set on the line', s.breakpoints.join() === '7', s.breakpoints.join());
+    check('a breakpoint is set on the line', s.breakpoints.join() === '11', s.breakpoints.join());
     await new Promise((r) => setTimeout(r, 300));
     await command('debug');
     s = await until('the run to pause at the breakpoint', (x) => x.runState === 'paused');
     check('the run pauses before the breakpoint line', s.status.includes("SELECT 'Pro'"), s.status);
-    check('the steps before it have run', s.results === 2, `${s.results} results`);
+    check('the steps before it have run', s.results === 4, `${s.results} results`);
     s = await until('variables to arrive', (x) => x.variables > 0, 5_000).catch(() => snapshot());
     // Not a failure when absent: the engine answers `vars` from debug contract
     // 0.2.1 on, and an older one is still an engine this app has to work with.
@@ -148,7 +191,7 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
     await shoot('3-paused');
     await new Promise((r) => setTimeout(r, 300));
     await command('next');
-    s = await until('the next pause', (x) => x.runState === 'paused' && x.results === 3);
+    s = await until('the next pause', (x) => x.runState === 'paused' && x.results === 5);
     check('Step runs one step and pauses again', s.status.includes('CHECK the checkbox'), s.status);
     await new Promise((r) => setTimeout(r, 300));
     await command('stop');
@@ -156,7 +199,7 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
     check('Stop ends a paused run', s.runState === 'idle');
 
     // ── the live session ────────────────────────────────────────────────────
-    await js('window.__studio.goto(5)'); // NAVIGATE to …
+    await js('window.__studio.goto(9)'); // NAVIGATE to …
     await new Promise((r) => setTimeout(r, 300));
     await command('run-line');
     s = await until('the live session to show the page', (x) => x.liveOpen && x.liveUrl.endsWith('page.html') && x.mapElements > 0);
@@ -164,12 +207,37 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
     const inserted = await js<string>(`(() => {
       const row = [...document.querySelectorAll('#map .el')].find((el) => el.textContent.includes('Create account'));
       if (!row) return 'no such element in the map';
-      window.__studio.goto(12);
+      window.__studio.goto(16);
       row.click();
       return window.__studio.editor.currentLine().text;
     })()`);
     check('picking an element writes its step', inserted.trim() === "CLICK the 'Create account' button", inserted);
     await shoot('4-live');
+
+    // ── a hook script in the editor ─────────────────────────────────────────
+    await js(`window.__studio.openFile(${JSON.stringify(hooksFile)})`);
+    await until('the hook script to open', (x) => x.active === hooksFile, 10_000);
+    const complete = (at: { line: number; column: number }): Promise<string[]> =>
+      js<string[]>(`window.__studio.completions(${JSON.stringify(hooksFile)}, ${at.line}, ${at.column})`).catch(() => []);
+    // The declarations are loaded after the window is up; give them time.
+    let offered: string[] = [];
+    const deadline = Date.now() + 40_000;
+    while (Date.now() < deadline && !offered.includes('variables')) {
+      await new Promise((r) => setTimeout(r, 500));
+      offered = await complete(afterInHooks('  ctx.'));
+    }
+    check(
+      "completion in a hook script knows the binding's types",
+      offered.includes('variables') && offered.includes('eval'),
+      offered.slice(0, 6).join(', ') || 'nothing offered',
+    );
+    const onProcess = await complete(afterInHooks('process.'));
+    check(
+      'and Node\'s own',
+      onProcess.includes('cwd') && onProcess.includes('env'),
+      onProcess.slice(0, 6).join(', ') || 'nothing offered',
+    );
+    await shoot('5-hooks');
   } catch (err) {
     failure = (err as Error).message;
     check('the smoke run completes', false, failure);

@@ -263,6 +263,41 @@ button:focus-visible {
   color: var(--dim);
 }
 
+/* ── file icons ───────────────────────────────────────────────────────────── */
+
+.ficon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.ficon img,
+.ficon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+.ficon img {
+  border-radius: 3px;
+}
+.ficon .tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 14px;
+  border-radius: 3px;
+  font: 700 8.5px/1 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: -0.2px;
+  text-transform: uppercase;
+}
+.ficon .tile.narrow {
+  font-size: 6.5px;
+  letter-spacing: -0.4px;
+}
+
 /* ── step palette ─────────────────────────────────────────────────────────── */
 
 #steps {
@@ -355,6 +390,12 @@ button:focus-visible {
   text-align: center;
   background: var(--bg);
   z-index: 2;
+}
+#welcome .logo {
+  width: 96px;
+  height: 96px;
+  margin-bottom: 14px;
+  border-radius: 18px;
 }
 #welcome h1 {
   margin: 0 0 6px;

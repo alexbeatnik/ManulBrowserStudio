@@ -12,6 +12,8 @@ import { $, basename, clear, dirname, duration, h, resizable, studio, tabs } fro
 import { EditorView } from './editor';
 import { Explorer } from './explorer';
 import { registerHunt, setCatalogue } from './hunt';
+import { MANUL_ICON } from './icons';
+import { completionsAt, setUpScriptLanguages } from './languages';
 import { PagePanel } from './page';
 import { Panels, stoppedByAuthor } from './panels';
 
@@ -72,6 +74,7 @@ class App {
       onError: (message) => void tell('Live session', message),
     });
 
+    $<HTMLImageElement>('welcome-logo').src = MANUL_ICON;
     this.wireToolbar();
     this.wireKeys();
     this.wireLayout();
@@ -96,6 +99,15 @@ class App {
     }
     this.refreshChrome();
     await this.loadEngine();
+    this.loadScriptTypes();
+  }
+
+  /**
+   * Hook scripts are JavaScript; completion for them needs the binding's
+   * declarations, which are large and not needed to start working.
+   */
+  private loadScriptTypes(): void {
+    if (this.settings.workspace) void setUpScriptLanguages(this.settings.workspace).catch(() => undefined);
   }
 
   // ── chrome ────────────────────────────────────────────────────────────────
@@ -126,6 +138,7 @@ class App {
     if (!active && workspace) {
       clear(welcome);
       welcome.append(
+        h('img', { class: 'logo', src: MANUL_ICON, alt: '' }),
         h('h1', { text: basename(workspace) }),
         h('p', { class: 'dim', text: 'Pick a file on the left, or start a new hunt.' }),
         h('p', {}, h('button', { class: 'primary', text: 'New hunt', onclick: () => void this.newFile() })),
@@ -217,6 +230,7 @@ class App {
     await this.explorer.setRoot(folder);
     this.refreshChrome();
     await this.loadEngine();
+    this.loadScriptTypes();
   }
 
   async openFile(file: string): Promise<void> {
@@ -254,6 +268,18 @@ class App {
       await this.openFile(file);
     } catch (err) {
       await tell('Could not create the file', reason(err));
+    }
+  }
+
+  /** Opens the folder's hook script, writing a starter one if it has none. */
+  private async newHooks(): Promise<void> {
+    if (!this.settings.workspace) return this.openFolder();
+    try {
+      const file = await studio.createHookScript();
+      await this.explorer.refresh();
+      await this.openFile(file);
+    } catch (err) {
+      await tell('Could not create the hook script', reason(err));
     }
   }
 
@@ -375,6 +401,7 @@ class App {
         if (event.dropped.length) {
           this.panels.addLog(`This engine does not know ${event.dropped.join(', ')}; left out.`);
         }
+        if (event.hooks) this.panels.addLog(`Hook script: ${event.hooks}`);
         break;
       case 'step': {
         const { step, line } = event;
@@ -444,6 +471,8 @@ class App {
         return void this.openFolder();
       case 'new-file':
         return void this.newFile();
+      case 'new-hooks':
+        return void this.newHooks();
       case 'save':
         return void this.save();
       case 'run':
@@ -543,8 +572,17 @@ class App {
       variables: document.querySelectorAll('#variables tr').length,
       breakpoints: this.editor.activePath ? this.editor.breakpoints(this.editor.activePath) : [],
       paletteEntries: document.querySelectorAll('#palette .entry').length,
+      fileIcons: document.querySelectorAll('#tree .row .ficon').length,
+      huntIcons: document.querySelectorAll('#tree .row.hunt .ficon img').length,
+      tabIcons: document.querySelectorAll('#editor-tabs .tab .ficon').length,
+      log: $('log').textContent ?? '',
       hasShot: !!$('shot').getAttribute('src'),
     };
+  }
+
+  /** What the script language service offers at a position; for scripted checks. */
+  completions(file: string, line: number, column: number): Promise<string[]> {
+    return completionsAt(file, line, column);
   }
 
   /** Puts the caret on a 1-based line; for scripted checks. */

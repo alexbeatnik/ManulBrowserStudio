@@ -3,6 +3,7 @@
 
 import type { DirEntry } from '../shared/api';
 import { clear, h, studio } from './dom';
+import { iconFor } from './icons';
 
 export class Explorer {
   private root = '';
@@ -49,15 +50,23 @@ export class Explorer {
       const pad = `${8 + depth * 14}px`;
       if (entry.dir) {
         const children = h('div');
-        const twist = h('span', { class: 'twist', text: this.expanded.has(entry.path) ? '▾' : '▸' });
-        const row = h('div', { class: 'row', style: `padding-left:${pad}`, title: entry.path }, twist, entry.name);
+        const open = this.expanded.has(entry.path);
+        const twist = h('span', { class: 'twist', text: open ? '▾' : '▸' });
+        let icon = iconFor(entry.name, open ? 'folder-open' : 'folder');
+        const row = h('div', { class: 'row', style: `padding-left:${pad}`, title: entry.path }, twist, icon, entry.name);
+        const setOpen = (now: boolean): void => {
+          twist.textContent = now ? '▾' : '▸';
+          const next = iconFor(entry.name, now ? 'folder-open' : 'folder');
+          icon.replaceWith(next);
+          icon = next;
+        };
         row.addEventListener('click', () => {
           if (this.expanded.delete(entry.path)) {
-            twist.textContent = '▸';
+            setOpen(false);
             clear(children);
           } else {
             this.expanded.add(entry.path);
-            twist.textContent = '▾';
+            setOpen(true);
             void this.render(entry.path, children, depth + 1);
           }
         });
@@ -75,6 +84,7 @@ export class Explorer {
             onclick: () => this.open(entry.path),
           },
           h('span', { class: 'twist' }),
+          iconFor(entry.name),
           entry.name,
         );
         into.append(row);

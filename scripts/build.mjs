@@ -9,7 +9,8 @@
 // Types are not checked here — `npm run typecheck` does that.
 
 import { build } from 'esbuild';
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { collectTypeLibraries } from './type-libraries.mjs';
 
 const dist = 'dist';
 const monaco = 'node_modules/monaco-editor/esm/vs';
@@ -43,7 +44,7 @@ await build({
   platform: 'browser',
   format: 'iife',
   target: 'chrome130',
-  loader: { '.ttf': 'file' },
+  loader: { '.ttf': 'file', '.png': 'file' },
 });
 
 await build({
@@ -62,3 +63,8 @@ await build({
 });
 
 await cp('src/renderer/index.html', `${dist}/renderer/index.html`);
+// What the editor completes hook scripts from.
+await writeFile(`${dist}/type-libraries.json`, JSON.stringify(collectTypeLibraries()));
+// The window's own icon, for a run from source; an installed app has it in
+// its executable.
+await cp('build/icon.png', `${dist}/icon.png`);

@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { hookEnvironment, hookRuntime, resolveHookScript } from '../core/hooks';
 import { parseHunt, StepLocator } from '../core/huntDoc';
 import { buildArgs, HuntRun, stripAnsi } from '../core/runner';
 import { DebugAction, RunEvent, RunRequest, Settings } from '../shared/api';
@@ -19,6 +20,8 @@ export class RunService {
     private readonly engines: EngineService,
     private readonly settings: () => Settings,
     private readonly emit: (event: RunEvent) => void,
+    /** The launcher for the app's own Node; see hookRuntime.ts. */
+    private readonly builtInNode: () => string,
   ) {}
 
   get active(): boolean {
@@ -37,9 +40,22 @@ export class RunService {
     const steps = new StepLocator(outline);
     const pauses = new StepLocator(outline);
 
+    // The engine runs the hook script it is told about and looks for none.
+    // The one that belongs to this hunt is the nearest `manul_hooks.*` at or
+    // above it, inside the open folder.
+    const hooks = resolveHookScript(request.file, cwd, { enabled: true, path: '' });
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (hooks) {
+      Object.assign(env, hookEnvironment(hooks, [cwd], engine, { python: '', node: '' }));
+      // A JavaScript script runs on the Node that came with the app, which
+      // can also find the binding for it. A Python one needs a Python.
+      if (hookRuntime(hooks) === 'node') env.MANUL_NODE = this.builtInNode();
+    }
+
     const { args, dropped } = buildArgs(
       request.file,
       {
+        hooks,
         browser: settings.browser,
         headless: settings.headless,
         screenshot: settings.screenshots,
@@ -49,7 +65,7 @@ export class RunService {
       engine,
     );
 
-    const run = new HuntRun(engine.path, args, cwd, process.env);
+    const run = new HuntRun(engine.path, args, cwd, env);
     this.run = run;
 
     // A pause is announced again after every command that does not end it,
@@ -86,7 +102,7 @@ export class RunService {
       this.emit({ kind: 'exit', code, error: error?.message });
     });
 
-    this.emit({ kind: 'started', file: request.file, commandLine: run.commandLine, dropped });
+    this.emit({ kind: 'started', file: request.file, commandLine: run.commandLine, dropped, hooks: hooks ?? '' });
     run.start();
   }
 

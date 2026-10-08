@@ -1,5 +1,5 @@
 // The tests of the modules shared with ManulBrowserExtension, as they are
-// there, less the ones for the hook scripts this app does not read.
+// there.
 
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -9,6 +9,12 @@ import { test } from 'node:test';
 
 import { loadBundledCatalogue, mergeSchema, syntaxToSnippet } from '../src/core/catalogue';
 import { findEngines, parseFlags, parseVersion, supports } from '../src/core/engine';
+import {
+  findHookScript,
+  hookEnvironment,
+  resolveHookScript,
+  scanHookScript,
+} from '../src/core/hooks';
 import { StepLocator, formatHunt, parseHunt } from '../src/core/huntDoc';
 import { EXPLAIN_MARKER, LineSplitter, PAUSE_MARKER, buildArgs, parseStdoutLine } from '../src/core/runner';
 
@@ -103,6 +109,123 @@ test('an engine whose help could not be read is assumed to support a flag', () =
   const base = { path: 'x', source: 'path' as const, detail: '', version: '0.1.0' };
   assert.equal(supports({ ...base, flags: new Set() }, 'hooks'), true);
   assert.equal(supports({ ...base, flags: new Set(['jsonl']) }, 'hooks'), false);
+});
+
+// ── hooks ───────────────────────────────────────────────────────────────────
+
+test('the nearest hook script at or above the hunt wins', () => {
+  const root = tmp();
+  const top = touch(path.join(root, 'manul_hooks.py'));
+  const hunt = touch(path.join(root, 'tests', 'checkout', 'pay.hunt'));
+  assert.equal(findHookScript(hunt, root), top);
+
+  const near = touch(path.join(root, 'tests', 'checkout', 'manul_hooks.mjs'));
+  assert.equal(findHookScript(hunt, root), near);
+});
+
+test('the search stops at the workspace root', () => {
+  const outer = tmp();
+  touch(path.join(outer, 'manul_hooks.py'));
+  const root = path.join(outer, 'project');
+  const hunt = touch(path.join(root, 'a.hunt'));
+  assert.equal(findHookScript(hunt, root), undefined);
+});
+
+test('hook pickup can be switched off or pointed at one file', () => {
+  const root = tmp();
+  touch(path.join(root, 'manul_hooks.py'));
+  const other = touch(path.join(root, 'support', 'hooks.py'));
+  const hunt = touch(path.join(root, 'a.hunt'));
+  assert.equal(resolveHookScript(hunt, root, { enabled: false, path: '' }), undefined);
+  assert.equal(resolveHookScript(hunt, root, { enabled: true, path: 'support/hooks.py' }), other);
+  assert.equal(resolveHookScript(hunt, root, { enabled: true, path: 'missing.py' }), undefined);
+});
+
+test('a Python hook script is read for what it registers', () => {
+  const scan = scanHookScript(
+    [
+      'import manul',
+      '',
+      '@manul.before_all',
+      'def login(ctx):',
+      '    ctx.set("token", "x")',
+      '',
+      '@manul.before_group("smoke")',
+      'def seed(ctx): pass',
+      '',
+      '@manul.custom_control(page="Checkout", target="Signature Pad")',
+      'def sign(ctx): pass',
+      '',
+      "@manul.call('compute_total')",
+      'def compute_total(ctx): return "1"',
+      '',
+      'manul.serve_hooks()',
+    ].join('\n'),
+    'manul_hooks.py',
+  );
+  assert.equal(scan.serves, true);
+  assert.deepEqual(
+    scan.handlers.map((h) => [h.kind, h.name, h.page, h.handler, h.line]),
+    [
+      ['before_all', '', '', 'login', 2],
+      ['before_group', 'smoke', '', 'seed', 6],
+      ['custom_control', 'Signature Pad', 'Checkout', 'sign', 9],
+      ['call', 'compute_total', '', 'compute_total', 12],
+    ],
+  );
+});
+
+test('a script that never serves is noticed', () => {
+  const scan = scanHookScript('import manul\n@manul.before_all\ndef a(ctx): pass\n', 'manul_hooks.py');
+  assert.equal(scan.serves, false);
+});
+
+test('a JavaScript hook script is read for what it registers', () => {
+  const scan = scanHookScript(
+    [
+      "import { beforeAll, afterGroup, customControl, call, serveHooks } from 'manul-browser';",
+      "beforeAll((ctx) => { ctx.variables.token = 'x'; ctx.variables['base_url'] = 'y'; });",
+      "afterGroup('smoke', cleanup);",
+      "customControl({ page: 'Checkout', target: 'Signature Pad' }, sign);",
+      "customControl('Date Picker', (ctx) => {});",
+      "call('compute_total', (ctx) => '1');",
+      'handler.call(this);',
+      'await serveHooks();',
+    ].join('\n'),
+    'manul_hooks.mjs',
+  );
+  assert.equal(scan.serves, true);
+  assert.deepEqual(scan.variables, ['token', 'base_url']);
+  assert.deepEqual(
+    scan.handlers.map((h) => [h.kind, h.name, h.page]),
+    [
+      ['before_all', '', ''],
+      ['after_group', 'smoke', ''],
+      ['custom_control', 'Signature Pad', 'Checkout'],
+      ['custom_control', 'Date Picker', ''],
+      ['call', 'compute_total', ''],
+    ],
+  );
+});
+
+test('a Python hook script runs under the interpreter the engine came from', () => {
+  const engine = { path: 'e', source: 'python' as const, detail: '', version: '0.1.2', flags: new Set<string>(), python: '/env/bin/python3' };
+  const env = hookEnvironment('/p/manul_hooks.py', ['/p'], engine, { python: '', node: '' }, {});
+  assert.equal(env.MANUL_PYTHON, '/env/bin/python3');
+  const configured = hookEnvironment('/p/manul_hooks.py', ['/p'], engine, { python: 'python3.12', node: '' }, {});
+  assert.equal(configured.MANUL_PYTHON, 'python3.12');
+});
+
+test('with a standalone engine, the environment that has the binding is used', () => {
+  const root = tmp();
+  touch(path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python3'));
+  const site =
+    process.platform === 'win32'
+      ? path.join(root, '.venv', 'Lib', 'site-packages')
+      : path.join(root, '.venv', 'lib', 'python3.12', 'site-packages');
+  touch(path.join(site, 'manul', '__init__.py'));
+  const env = hookEnvironment(path.join(root, 'manul_hooks.py'), [root], undefined, { python: '', node: '' }, {});
+  assert.ok(env.MANUL_PYTHON?.startsWith(path.join(root, '.venv')));
 });
 
 // ── hunt documents ──────────────────────────────────────────────────────────

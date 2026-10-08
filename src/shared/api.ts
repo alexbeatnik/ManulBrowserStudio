@@ -64,7 +64,7 @@ export interface RunRequest {
  * step the engine reported could not be found in the file.
  */
 export type RunEvent =
-  | { kind: 'started'; file: string; commandLine: string; dropped: string[] }
+  | { kind: 'started'; file: string; commandLine: string; dropped: string[]; hooks: string }
   | { kind: 'step'; step: StepResult; line?: number; screenshot?: string }
   | { kind: 'pause'; pause: PauseEvent; line?: number }
   | { kind: 'vars'; vars: Record<string, string> }
@@ -111,9 +111,16 @@ export interface LiveStepOutcome {
   near: Array<{ text: string; score: number }>;
 }
 
+/** One declaration file for the editor's TypeScript service, at its path under a package root. */
+export interface TypeLibrary {
+  path: string;
+  content: string;
+}
+
 export type MenuCommand =
   | 'open-folder'
   | 'new-file'
+  | 'new-hooks'
   | 'save'
   | 'run'
   | 'debug'
@@ -135,9 +142,13 @@ export interface StudioApi {
   writeFile(file: string, text: string): Promise<void>;
   /** Creates an empty file in `dir`; resolves to its path. */
   createFile(dir: string, name: string): Promise<string>;
+  /** Creates a starter hook script at the top of the open folder; resolves to its path. */
+  createHookScript(): Promise<string>;
 
   engine(): Promise<EngineStatus>;
   catalogue(): Promise<CatalogueView>;
+  /** Declarations for JavaScript and TypeScript completion. */
+  typeLibraries(): Promise<TypeLibrary[]>;
 
   startRun(request: RunRequest): Promise<void>;
   stopRun(): Promise<void>;

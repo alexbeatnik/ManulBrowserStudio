@@ -2,10 +2,13 @@
 // things of.
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, MenuItemConstructorOptions, shell } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import { grouped } from '../core/catalogue';
 import { CatalogueView, DebugAction, MenuCommand, RunEvent, RunRequest, Settings } from '../shared/api';
+import { hookTemplate, HOOK_BASENAMES } from '../core/hooks';
 import { EngineService } from './engineService';
+import { builtInNode } from './hookRuntime';
 import { LiveService } from './live';
 import { RunService } from './runs';
 import { SettingsStore } from './settings';
@@ -26,6 +29,7 @@ function buildMenu(): Menu {
       submenu: [
         { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: menu('open-folder') },
         { label: 'New File…', accelerator: 'CmdOrCtrl+N', click: menu('new-file') },
+        { label: 'New Hook Script', click: menu('new-hooks') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: menu('save') },
         { type: 'separator' },
@@ -82,6 +86,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     backgroundColor: '#15171c',
     title: 'Manul Browser Studio',
+    icon: path.join(__dirname, 'icon.png'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -119,7 +124,14 @@ function main(): void {
   const engineRoot = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked') : appRoot;
   const engines = new EngineService(settings, appRoot, engineRoot);
   const workspace = new Workspace(() => settings().workspace);
-  const runs = new RunService(engines, settings, (event: RunEvent) => send('studio:runEvent', event));
+  const runs = new RunService(
+    engines,
+    settings,
+    (event: RunEvent) => send('studio:runEvent', event),
+    // engineRoot is also where the binding is a real folder on disk, which is
+    // what a Node outside the app needs to import it.
+    () => builtInNode(path.join(app.getPath('userData'), 'hook-runtime'), process.execPath, engineRoot),
+  );
   const live = new LiveService(engines, settings);
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void => {
@@ -156,8 +168,22 @@ function main(): void {
   handle('readFile', (file: string) => workspace.read(file));
   handle('writeFile', (file: string, text: string) => workspace.write(file, text));
   handle('createFile', (dir: string, name: string) => workspace.create(dir, name));
+  handle('createHookScript', async () => {
+    const folder = settings().workspace;
+    if (!folder) throw new Error('Open a folder first.');
+    // One hook script per folder is what a run picks up; a second would only
+    // shadow the first.
+    const existing = HOOK_BASENAMES.map((name) => path.join(folder, name)).find((file) => fs.existsSync(file));
+    if (existing) return existing;
+    const file = await workspace.create(folder, 'manul_hooks.mjs');
+    await workspace.write(file, hookTemplate('node').replace('the Manul Browser extension', 'Manul Browser Studio'));
+    return file;
+  });
 
   handle('engine', () => engines.status());
+  // Gathered at build time (scripts/type-libraries.mjs): a packaged app has no
+  // declaration files in its node_modules to read them from.
+  handle('typeLibraries', () => JSON.parse(fs.readFileSync(path.join(__dirname, 'type-libraries.json'), 'utf8')));
   handle('catalogue', async (): Promise<CatalogueView> => {
     const catalogue = await engines.catalogue();
     return { catalogue, groups: grouped(catalogue) };
