@@ -69,11 +69,12 @@ DSL contract (`npm run dsl` regenerates it from a `manul-browser` checkout
 beside this one), widened at run time by whatever the installed engine's
 `manul schema` reports.
 
-### What needs a newer engine
+### What needs a particular engine
 
-Variables at a debug pause use the `vars` command of debug contract 0.2.1.
-An engine without it simply does not answer, and the Variables panel stays
-empty while paused; everything else works on 0.1.2.
+Variables at a debug pause use the `vars` command of debug contract 0.2.1,
+which the engine has from 0.1.3 — the version that comes with the app. A
+project that pins an older engine is still run on its own engine and gets
+everything else; the Variables panel just stays empty while it is paused.
 
 ## Layout
 
