@@ -2,7 +2,7 @@
 // opened and not before.
 
 import type { DirEntry } from '../shared/api';
-import { clear, dirname, h, studio } from './dom';
+import { clear, dirname, h, reason, studio } from './dom';
 import { iconFor } from './icons';
 
 export class Explorer {
@@ -69,11 +69,11 @@ export class Explorer {
     try {
       entries = await studio.listDir(dir);
     } catch (err) {
-      into.append(h('div', { class: 'empty', text: (err as Error).message }));
+      into.append(h('div', { class: 'empty error', text: reason(err) }));
       return;
     }
     if (depth === 0 && entries.length === 0) {
-      into.append(h('div', { class: 'empty', text: 'This folder is empty. Use “+ New” to start a hunt.' }));
+      into.append(h('div', { class: 'empty', text: 'This folder is empty. Use “+ File” to start a hunt.' }));
     }
     for (const entry of entries) {
       const pad = `${8 + depth * 14}px`;
@@ -89,6 +89,10 @@ export class Explorer {
             style: `padding-left:${pad}`,
             title: entry.path,
             'data-dir': entry.path,
+            role: 'button',
+            tabindex: '0',
+            'aria-expanded': String(open),
+            'aria-label': `${open ? 'Collapse' : 'Expand'} ${entry.name}`,
           },
           twist,
           icon,
@@ -96,11 +100,13 @@ export class Explorer {
         );
         const setOpen = (now: boolean): void => {
           twist.textContent = now ? '▾' : '▸';
+          row.setAttribute('aria-expanded', String(now));
+          row.setAttribute('aria-label', `${now ? 'Collapse' : 'Expand'} ${entry.name}`);
           const next = iconFor(entry.name, now ? 'folder-open' : 'folder');
           icon.replaceWith(next);
           icon = next;
         };
-        row.addEventListener('click', () => {
+        const toggle = (): void => {
           this.focus = entry.path;
           this.markTarget();
           if (this.expanded.delete(entry.path)) {
@@ -111,6 +117,12 @@ export class Explorer {
             setOpen(true);
             void this.render(entry.path, children, depth + 1);
           }
+        };
+        row.addEventListener('click', toggle);
+        row.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          toggle();
         });
         into.append(row, children);
         if (this.expanded.has(entry.path)) await this.render(entry.path, children, depth + 1);
@@ -123,12 +135,19 @@ export class Explorer {
             style: `padding-left:${pad}`,
             title: entry.path,
             'data-path': entry.path,
+            role: 'button',
+            tabindex: '0',
             onclick: () => this.open(entry.path),
           },
           h('span', { class: 'twist' }),
           iconFor(entry.name),
           entry.name,
         );
+        row.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          this.open(entry.path);
+        });
         into.append(row);
       }
     }

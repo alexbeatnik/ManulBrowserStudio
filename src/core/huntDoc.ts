@@ -13,6 +13,7 @@ export const RE_OPENER = /^\s*(IF|REPEAT|FOR\s+EACH|WHILE)\b.*:\s*$/i;
 export const RE_BRANCH = /^\s*(ELIF\b.*|ELSE)\s*:\s*$/i;
 export const RE_END = /^\s*END\s*(IF|REPEAT|WHILE|FOR|EACH)\b.*$/i;
 export const RE_CALL = /^\s*CALL\s+(?:HOST|PYTHON|GO|JS|NODE)\s+([\w.\-]+)/i;
+export const RE_USE = /^\s*USE\s+(.+?)\s*$/i;
 
 export interface HuntStep {
   /** The header as the engine reports it in `step_block`. */
@@ -128,13 +129,23 @@ export function parseHunt(text: string): HuntOutline {
  * in execution order, so the search starts just after the previous match and
  * wraps: a loop body is found again on its second pass, and two identical
  * lines in one file each get their own result.
+ *
+ * A step of a block borrowed from another file (`USE Open the shop`) is not a
+ * line of this one. It is reported under the block's own header, and belongs
+ * to the USE line that brought it in.
  */
 export class StepLocator {
   private cursor = 0;
+  /** The index of the USE command the last step was found under, or -1. */
+  private using = -1;
 
   constructor(private readonly outline: HuntOutline) {}
 
-  locate(stepText: string, block?: string): number | undefined {
+  /**
+   * @param index the step's place in its block, as the engine counts it; a
+   *              borrowed block that starts over is a new USE line.
+   */
+  locate(stepText: string, block?: string, index?: number): number | undefined {
     const wanted = normalise(stripListNumber(stepText.trim()));
     if (!wanted) return undefined;
     const cmds = this.outline.commands;
@@ -148,12 +159,29 @@ export class StepLocator {
         if (cmds[i].text !== wanted) continue;
         if (requireBlock && cmds[i].step !== blockIndex) continue;
         this.cursor = i + 1;
+        this.using = -1;
         return cmds[i].line;
       }
       return undefined;
     };
 
-    return (blockIndex >= 0 ? search(true) : undefined) ?? search(false);
+    const borrowed = (): number | undefined => {
+      const name = block?.match(RE_STEP)?.[1].trim().toLowerCase();
+      if (!name) return undefined;
+      const uses = (i: number): boolean => cmds[i].text.match(RE_USE)?.[1].toLowerCase() === name;
+      // Still inside the block the last step came from.
+      if (this.using >= 0 && uses(this.using) && index !== 0) return cmds[this.using].line;
+      for (let n = 0; n < cmds.length; n++) {
+        const i = (this.cursor + n) % cmds.length;
+        if (!uses(i)) continue;
+        this.cursor = i + 1;
+        this.using = i;
+        return cmds[i].line;
+      }
+      return undefined;
+    };
+
+    return (blockIndex >= 0 ? search(true) : undefined) ?? borrowed() ?? search(false);
   }
 
   /** The STEP block a line belongs to. */

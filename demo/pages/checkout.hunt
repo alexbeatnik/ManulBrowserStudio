@@ -1,0 +1,22 @@
+# A page object: the checkout form, and the confirmation it leads to.
+# See pages/shop.hunt for how these are used.
+#
+# {customer} and {email} are set by the hunt, or for a hunt tagged `checkout`
+# by the hook script.
+
+@context: Page object: checkout and the order confirmation
+@title: Page - Checkout
+
+STEP 1: Fill in the customer
+    FILL 'Full name' field with '{customer}'
+    FILL 'Email' field with '{email}'
+
+STEP 2: Place the order
+    CHECK the checkbox for 'I accept the terms'
+    CLICK the 'Place order' button
+    VERIFY that 'Thank you, {customer}!' is present
+
+STEP 3: Read the order
+    EXTRACT the 'Order number' into {order}
+    EXTRACT the 'Paid' into {paid}
+DONE.

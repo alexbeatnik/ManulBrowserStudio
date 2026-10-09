@@ -8,7 +8,7 @@ import type { CatalogueEntry } from '../core/catalogue';
 import type { BrowserName, MenuCommand, RunEvent, ScreenshotMode, Settings } from '../shared/api';
 import { runnableLine, stepForElement, verifyForElement } from '../shared/steps';
 import { ask, choose, tell } from './dialogs';
-import { $, basename, clear, duration, h, resizable, studio, tabs } from './dom';
+import { $, basename, clear, dirname, duration, h, reason, resizable, studio, tabs } from './dom';
 import { EditorView } from './editor';
 import { Explorer } from './explorer';
 import { registerHunt, setCatalogue } from './hunt';
@@ -22,10 +22,6 @@ type RunState = 'idle' | 'running' | 'paused';
 
 const STARTER = (title: string): string =>
   `@title: ${title}\n\nSTEP 1: Open the page\n    NAVIGATE to https://example.com\nDONE.\n`;
-
-/** What an IPC rejection says, without Electron's wrapping. */
-const reason = (err: unknown): string =>
-  (err instanceof Error ? err.message : String(err)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
 
 class App {
   private settings!: Settings;
@@ -43,7 +39,14 @@ class App {
   /** Steps the current run has finished, and its verdict once it has one. */
   private stepsDone = 0;
   private verdict = '';
+  /**
+   * What the current run has spent on each line so far. A line is come back
+   * to by a loop, and a USE line stands for every step of the block it names.
+   */
+  private readonly lineTime = new Map<number, number>();
   private quitting = false;
+  /** The person asked for the current run to be stopped. */
+  private stopping = false;
   private lastCommand = { name: '', at: 0 };
 
   constructor() {
@@ -101,20 +104,43 @@ class App {
     $<HTMLSelectElement>('browser').value = this.settings.browser;
     $<HTMLInputElement>('headless').checked = this.settings.headless;
     $<HTMLSelectElement>('screenshots').value = this.settings.screenshots;
+    this.showBrowserChoice();
 
     if (this.settings.workspace) {
       try {
-        await this.explorer.setRoot(this.settings.workspace);
+        // Asked here and not left to the tree, which shows a folder it cannot
+        // read as an error and carries on.
+        await studio.listDir(this.settings.workspace);
       } catch {
         // The folder is gone since last time; start without one.
         this.settings = await studio.setSettings({ workspace: '' });
       }
     }
+    if (this.settings.workspace) await this.explorer.setRoot(this.settings.workspace);
     this.refreshChrome();
     await this.loadEngine();
     this.loadScriptTypes();
     void this.libraries.showRuntime();
     void this.libraries.refresh(this.settings.workspace);
+
+    // The demo project, when it has just been asked for. With nothing else to
+    // open it is opened; a person with a folder of their own open keeps it.
+    const offer = await studio.demoOffer();
+    if (offer && !this.settings.workspace) {
+      await this.openDemo(true);
+    } else if (offer === 'installer') {
+      // They said yes to it all the same: it is put where it belongs.
+      const demo = await studio.openDemo().catch(() => undefined);
+      if (demo) this.status(`The demo project is in ${demo.folder}. File → Open Demo Project opens it.`);
+    }
+  }
+
+  /** Brings the toolbar and the page panel in line with which browser is chosen. */
+  private showBrowserChoice(): void {
+    const builtIn = this.settings.browser === 'builtin';
+    // The page in the panel is always in sight; there is no window to hide.
+    $<HTMLInputElement>('headless').disabled = builtIn;
+    this.page.setBuiltIn(builtIn);
   }
 
   /**
@@ -186,7 +212,7 @@ class App {
         host.append(h('h3', { text: group.title }));
         for (const entry of entries) {
           host.append(
-            h('div', {
+            h('button', {
               class: 'entry',
               text: entry.uiText,
               title: entry.description,
@@ -238,8 +264,27 @@ class App {
     if (folder) await this.openWorkspace(folder);
   }
 
+  /**
+   * Opens the person's copy of the demo project, making it first if it is not
+   * there. On a first start nobody asked for it, so a failure is not an error
+   * to put in front of them.
+   */
+  private async openDemo(quietly = false): Promise<void> {
+    try {
+      const demo = await studio.openDemo();
+      await this.openWorkspace(demo.folder);
+      this.explorer.reveal(dirname(demo.file));
+      await this.explorer.refresh();
+      await this.openFile(demo.file);
+    } catch (err) {
+      if (!quietly) await tell('Could not open the demo project', reason(err));
+    }
+  }
+
   async openWorkspace(folder: string): Promise<void> {
     for (const path of this.editor.dirtyPaths()) await this.save(path);
+    // The files of the folder being left cannot be saved once it is closed.
+    if (folder !== this.settings.workspace) for (const path of this.editor.openPaths()) await this.editor.close(path);
     this.settings = await studio.setSettings({ workspace: folder });
     // The live session was that folder's; the main process has closed it.
     this.page.closedElsewhere();
@@ -393,6 +438,7 @@ class App {
 
     const breakLines = this.editor.breakpoints(file);
     this.runFile = file;
+    this.stopping = false;
     this.editor.clearMarks(file);
     this.panels.reset();
     this.showBottom('results');
@@ -431,6 +477,7 @@ class App {
       case 'started':
         this.stepsDone = 0;
         this.verdict = '';
+        this.lineTime.clear();
         this.panels.addLog(`$ ${event.commandLine}`);
         if (event.dropped.length) {
           this.panels.addLog(`This engine does not know ${event.dropped.join(', ')}; left out.`);
@@ -442,7 +489,9 @@ class App {
         this.stepsDone++;
         this.panels.addStep(step, line);
         if (line !== undefined && !stoppedByAuthor(step)) {
-          const note = step.success ? duration(step.duration_ms) : step.error || step.failure_reason || 'failed';
+          const spent = (this.lineTime.get(line) ?? 0) + step.duration_ms;
+          this.lineTime.set(line, spent);
+          const note = step.success ? duration(spent) : step.error || step.failure_reason || 'failed';
           this.editor.markLine(this.runFile, line, step.success, note.split('\n')[0].slice(0, 160));
         }
         if (event.screenshot) this.page.showRunShot(event.screenshot, `run · after step ${this.stepsDone}`);
@@ -476,14 +525,22 @@ class App {
       case 'exit':
         this.editor.setPaused(undefined);
         this.setRunState('idle');
+        // A run in the built-in browser has left the live session's page
+        // somewhere its list of elements knows nothing about.
+        if (this.settings.browser === 'builtin' && this.page.isOpen) void this.page.refresh();
         if (event.error) {
           this.status(`The engine could not be run: ${event.error}`);
           this.showBottom('output');
           this.panels.addLog(event.error);
-        } else {
-          // No verdict means the run never got to give one: stopped, or the
-          // engine went down.
+        } else if (this.verdict || event.code === 0 || this.stopping) {
+          // No verdict means the run never got to give one: it was stopped.
           this.status(this.verdict || (event.code === 0 ? 'Run finished' : 'Run stopped'));
+        } else {
+          // Or the engine gave up by itself — a hook script that would not
+          // start, a browser that is not installed. Why is the last thing it
+          // said, and nobody looks for it under a tab that is not in front.
+          this.status('The run ended before it had a result. What the engine said is under Output.');
+          this.showBottom('output');
         }
         break;
     }
@@ -503,6 +560,8 @@ class App {
     switch (name) {
       case 'open-folder':
         return void this.openFolder();
+      case 'open-demo':
+        return void this.openDemo();
       case 'new-file':
         return void this.newFile();
       case 'new-folder':
@@ -518,6 +577,7 @@ class App {
       case 'step-through':
         return void this.run('step');
       case 'stop':
+        this.stopping = true;
         return void studio.stopRun();
       case 'format':
         return this.editor.format();
@@ -537,6 +597,7 @@ class App {
       $(id).addEventListener('click', () => this.command(name));
     on('open-folder', 'open-folder');
     on('welcome-open', 'open-folder');
+    on('welcome-demo', 'open-demo');
     on('new-file', 'new-file');
     on('new-folder', 'new-folder');
     on('run', 'run');
@@ -555,6 +616,7 @@ class App {
         await this.page.close();
         this.status('The live session was ended; start it again for the new browser settings.');
       }
+      if ('browser' in patch) this.showBrowserChoice();
     };
     $<HTMLSelectElement>('browser').addEventListener('change', (e) =>
       void change({ browser: (e.target as HTMLSelectElement).value as BrowserName }),
@@ -585,10 +647,18 @@ class App {
 
   private wireLayout(): void {
     const split = (name: string): HTMLElement => document.querySelector<HTMLElement>(`[data-resize="${name}"]`)!;
-    resizable(split('sidebar'), '--sidebar-w', 'x', 1, 160, () => window.innerWidth * 0.4);
-    resizable(split('page'), '--page-w', 'x', -1, 240, () => window.innerWidth * 0.6);
-    resizable(split('bottom'), '--bottom-h', 'y', -1, 80, () => window.innerHeight * 0.7);
-    resizable(split('map'), '--map-h', 'y', -1, 80, () => window.innerHeight * 0.7);
+    resizable(split('sidebar'), '--sidebar-w', 'x', 1, 160, () =>
+      window.innerWidth - $('page').getBoundingClientRect().width - 308,
+    );
+    resizable(split('page'), '--page-w', 'x', -1, 240, () =>
+      window.innerWidth - $('sidebar').getBoundingClientRect().width - 308,
+    );
+    resizable(split('bottom'), '--bottom-h', 'y', -1, 80, () =>
+      $('center').clientHeight - $('editor-tabs').clientHeight - 84,
+    );
+    resizable(split('map'), '--map-h', 'y', -1, 80, () =>
+      $('shot-host').clientHeight + $('map-host').clientHeight - 80,
+    );
     this.showSidebar('files');
   }
 
@@ -600,6 +670,7 @@ class App {
       runState: this.runState,
       results: document.querySelectorAll('#results .result.pass, #results .result.fail').length,
       failed: document.querySelectorAll('#results .result.fail').length,
+      located: document.querySelectorAll('#results .result.pass[title^="Line"], #results .result.fail[title^="Line"]').length,
       summary: $('run-summary').textContent,
       status: $('status-text').textContent,
       engine: $('engine').textContent,
@@ -610,6 +681,7 @@ class App {
       breakpoints: this.editor.activePath ? this.editor.breakpoints(this.editor.activePath) : [],
       paletteEntries: document.querySelectorAll('#palette .entry').length,
       fileIcons: document.querySelectorAll('#tree .row .ficon').length,
+      treeError: document.querySelector('#tree .empty.error')?.textContent ?? '',
       folders: [...document.querySelectorAll<HTMLElement>('#tree .row[data-dir]')].map((r) => r.textContent ?? ''),
       node: $('status-node').textContent ?? '',
       libraries: [...document.querySelectorAll('#lib-list .lib')].map((r) => r.textContent ?? ''),

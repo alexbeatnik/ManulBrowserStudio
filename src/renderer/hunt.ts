@@ -35,6 +35,11 @@ function tokens(verbs: string[]): monaco.languages.IMonarchLanguage {
     tokenizer: {
       root: [
         [/^\s*#.*$/, 'comment'],
+        // The names of borrowed blocks are names, whatever words they are
+        // made of: `Open the shop` is not an OPEN step.
+        // `[@]`: Monarch reads a bare `@import` as one of its own attributes.
+        [/^\s*[@]import\s*:/, { token: 'annotation', next: '@imported' }],
+        [/^\s*USE\b/, { token: 'keyword.control', next: '@title' }],
         [/^\s*@\w+\s*:/, 'annotation'],
         [/^\s*\[(?:END\s+)?(?:SETUP|TEARDOWN)\]\s*$/, 'keyword.block'],
         [/^\s*(?:\d+\.\s*)?STEP\b\s*\d*\s*:/, { token: 'keyword.block', next: '@title' }],
@@ -56,6 +61,12 @@ function tokens(verbs: string[]): monaco.languages.IMonarchLanguage {
       ],
       title: [
         [/.+$/, { token: 'entity.name', next: '@pop' }],
+        [/$/, { token: '', next: '@pop' }],
+      ],
+      imported: [
+        [/\s+from\s+(?=['"])/, { token: 'keyword.control', next: '@pop' }],
+        [/[^,\s]+/, 'entity.name'],
+        [/[,\s]+/, ''],
         [/$/, { token: '', next: '@pop' }],
       ],
       single: [

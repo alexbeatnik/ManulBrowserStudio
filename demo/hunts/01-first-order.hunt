@@ -1,0 +1,42 @@
+# Press F5 to run this file. Each line is marked as it finishes, the Results
+# panel below lists the steps, and the page panel on the right shows the shop.
+#
+# Or go a line at a time: put the caret on a step and press Ctrl+Enter. The
+# line is run in the page panel's browser, and what is on the page is listed
+# under it.
+#
+# The shop is the site/ folder of this project: a page to practise on, which
+# needs no network. Here its address is written out in full, so that every
+# line of this file can be run on its own.
+
+@context: The demo shop: one order from the first page to the last, in plain steps
+@title: First order
+
+STEP 1: Open the shop
+    NAVIGATE to DEMO_SITE_URL/index.html
+    VERIFY that 'Steppe Goods' is present
+
+STEP 2: Find a product and put it in the cart
+    FILL 'Search' field with 'blanket'
+    VERIFY that 'Wool Blanket' is present
+    VERIFY that 'Trail Lantern' is NOT present
+    CLICK the 'Add to cart' button NEAR 'Wool Blanket'
+    VERIFY that 'Wool Blanket added to cart' is present
+
+STEP 3: Check out
+    CLICK the 'Cart' button
+    VERIFY that 'Your cart' is present
+    CLICK the 'Checkout' button
+    FILL 'Full name' field with 'Ada Lovelace'
+    FILL 'Email' field with 'ada@example.com'
+    SELECT 'Express' from the 'Delivery' dropdown
+    CLICK the 'Cash on delivery' radio
+    CHECK the checkbox for 'I accept the terms'
+    CLICK the 'Place order' button
+
+STEP 4: The order is confirmed
+    VERIFY that 'Thank you, Ada Lovelace!' is present
+    EXTRACT the 'Order number' into {order}
+    EXTRACT the 'Paid' into {paid}
+    PRINT "Order {order}: {paid}"
+DONE.

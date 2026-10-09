@@ -43,14 +43,44 @@ export async function resolve(specifier, context, nextResolve) {
 `;
 
 /**
+ * Whether Windows can start a batch file at this path whatever it is handed.
+ *
+ * A batch file is run by `cmd.exe /c <command line>`, and cmd takes the quotes
+ * off a line that begins with one and has more than two: a launcher whose
+ * path has a space in it, started with a script whose path has one too,
+ * becomes `C:\Users\me\AppData\Roaming\Manul` — "not recognized as a
+ * command". A path that needs no quotes is never in that position.
+ */
+export function plainForCmd(file: string): boolean {
+  return !/[\s&|()<>^%!"',;=]/.test(file);
+}
+
+/**
  * Writes the launcher and returns its path, for MANUL_NODE.
  *
- * @param dir          a folder the app may write to
+ * @param dirs         folders the app may write to, best first. On Windows
+ *                     one that `plainForCmd` is taken ahead of one that is
+ *                     not, and the per-user data folder — which has the
+ *                     app's name, spaces and all, in it — never is.
  * @param executable   the app's own executable (Electron)
  * @param bindingRoot  the folder whose node_modules has `manul-browser`, as
  *                     real files on disk
  */
-export function builtInNode(dir: string, executable: string, bindingRoot: string): string {
+export function builtInNode(dirs: string[], executable: string, bindingRoot: string): string {
+  const ordered =
+    process.platform === 'win32' ? [...dirs.filter(plainForCmd), ...dirs.filter((d) => !plainForCmd(d))] : dirs;
+  let failure: unknown = new Error('nowhere to write the launcher for hook scripts');
+  for (const dir of ordered) {
+    try {
+      return writeLauncher(dir, executable, bindingRoot);
+    } catch (err) {
+      failure = err;
+    }
+  }
+  throw failure;
+}
+
+function writeLauncher(dir: string, executable: string, bindingRoot: string): string {
   fs.mkdirSync(dir, { recursive: true });
   const register = path.join(dir, 'register.mjs');
   const resolver = path.join(dir, 'resolve.mjs');
@@ -65,10 +95,10 @@ export function builtInNode(dir: string, executable: string, bindingRoot: string
     const launcher = path.join(dir, 'node.cmd');
     // `@echo off` is not cosmetic: the script's stdout is the protocol, and
     // an echoed command line on it would be the first thing the engine reads.
-    fs.writeFileSync(
-      launcher,
-      ['@echo off', 'set ELECTRON_RUN_AS_NODE=1', `"${executable}" ${importFlag} %*`, ''].join('\r\n'),
-    );
+    // A percent sign is doubled: in a batch file `%20`, which is how a URL
+    // writes a space, is the second argument followed by a zero.
+    const line = `"${executable}" ${importFlag}`.replaceAll('%', '%%');
+    fs.writeFileSync(launcher, ['@echo off', 'set ELECTRON_RUN_AS_NODE=1', `${line} %*`, ''].join('\r\n'));
     return launcher;
   }
   const launcher = path.join(dir, 'node');

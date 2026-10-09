@@ -5,7 +5,7 @@
 // page can do is exactly the list in src/shared/api.ts.
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { MenuCommand, RunEvent, StudioApi } from '../shared/api';
+import type { MenuCommand, PageState, RunEvent, StudioApi } from '../shared/api';
 
 const call =
   <T>(channel: string) =>
@@ -23,6 +23,8 @@ const api: StudioApi = {
   createFile: call('createFile'),
   createFolder: call('createFolder'),
   createHookScript: call('createHookScript'),
+  openDemo: call('openDemo'),
+  demoOffer: call('demoOffer'),
   engine: call('engine'),
   catalogue: call('catalogue'),
   typeLibraries: call('typeLibraries'),
@@ -43,6 +45,11 @@ const api: StudioApi = {
   liveClose: call('liveClose'),
   liveRefresh: call('liveRefresh'),
   liveStep: call('liveStep'),
+  pagePlace: call('pagePlace'),
+  pageNavigate: call('pageNavigate'),
+  onPageState: (listener) => {
+    ipcRenderer.on('studio:pageState', (_e, state: PageState) => listener(state));
+  },
   onMenu: (listener) => {
     ipcRenderer.on('studio:menu', (_e, command: MenuCommand) => listener(command));
   },

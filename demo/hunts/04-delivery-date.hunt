@@ -1,0 +1,40 @@
+# Two widgets on this path are not form controls: the delivery date is a
+# calendar that opens from a button, and the rating is five drawn stars. The
+# steps for them below are ordinary FILL lines all the same; the hook script
+# registers a custom control for each (support/controls.mjs) and the engine
+# hands those steps to it.
+#
+# {customer} and {email} are not set here either: the hook script sets them
+# for every hunt tagged `checkout` (support/suite.mjs).
+#
+# To see all of it at once, set a breakpoint on the PRINT line and press F6:
+# the Variables tab shows what the hooks, the page and the hunt each added.
+
+@context: The demo shop: an order with a delivery date and a rating, through custom controls
+@title: Delivery date
+@tags: checkout
+
+@import: Open the shop, Add the product, Open the cart from '../pages/shop.hunt'
+@import: Go to checkout from '../pages/cart.hunt'
+@import: Fill in the customer, Place the order, Read the order from '../pages/checkout.hunt'
+
+STEP 1: A blanket, as far as the checkout
+    SET {product} = Wool Blanket
+    USE Open the shop
+    USE Add the product
+    USE Open the cart
+    USE Go to checkout
+
+STEP 2: Order it for three days from now
+    USE Fill in the customer
+    CALL HOST shop.delivery_day with args: "3" into {day}
+    FILL 'Delivery date' field with '{day}'
+    USE Place the order
+
+STEP 3: The order says so, and is rated
+    VERIFY that '{day}' is present
+    USE Read the order
+    FILL 'Rating' field with '5'
+    VERIFY that 'Thanks for the 5 stars!' is present
+    PRINT "Order {order} for {customer}, {paid}, arriving {day}"
+DONE.

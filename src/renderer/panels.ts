@@ -102,7 +102,7 @@ export class Panels {
         row.append(h('div', { class: 'near', text: `closest on the page: ${list}` }));
       }
     }
-    if (line !== undefined) row.addEventListener('click', () => this.reveal(line));
+    if (line !== undefined) this.makeRevealable(row, line, step.step);
     this.append(row);
   }
 
@@ -127,9 +127,21 @@ export class Panels {
         row.append(h('div', { class: 'near', text: `closest on the page: ${list}` }));
       }
     }
-    if (line !== undefined) row.addEventListener('click', () => this.reveal(line));
+    if (line !== undefined) this.makeRevealable(row, line, outcome.step);
     this.append(row);
     this.show('results');
+  }
+
+  private makeRevealable(row: HTMLElement, line: number, step: string): void {
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `Go to line ${line + 1}: ${step}`);
+    row.addEventListener('click', () => this.reveal(line));
+    row.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      this.reveal(line);
+    });
   }
 
   finish(result: HuntResult): void {

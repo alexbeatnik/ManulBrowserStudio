@@ -1,0 +1,28 @@
+# This one fails, and is meant to: one step asks for something the page does
+# not have.
+#
+# Run it (F5). The failed line is marked in red with the reason written after
+# it, and the Results panel lists the elements on the page that came closest.
+# One of them is what the step should have said. Fix the line and run again.
+#
+# To look before fixing: set a breakpoint on the failing line (click left of
+# its number, or F9) and press F6. The run stops there with the page as that
+# step would find it, and Explain says what the step would act on.
+
+@context: The demo shop: a hunt with one wrong step, to be found and fixed
+@title: Find the bug
+
+STEP 1: Put a lantern in the cart
+    NAVIGATE to DEMO_SITE_URL/index.html
+    CLICK the 'Add to cart' button NEAR 'Trail Lantern'
+    CLICK the 'Cart' button
+    VERIFY that 'Trail Lantern' is present
+
+STEP 2: Order it
+    CLICK the 'Checkout' button
+    FILL 'Full name' field with 'Alan Turing'
+    FILL 'Email' field with 'alan@example.com'
+    CHECK the checkbox for 'I accept the terms'
+    CLICK the 'Pay now' button
+    VERIFY that 'Thank you, Alan Turing!' is present
+DONE.

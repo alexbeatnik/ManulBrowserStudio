@@ -32,6 +32,7 @@
         <label title="The browser hunts run in">
           Browser
           <select id="browser">
+            <option value="builtin">Built-in</option>
             <option value="chromium">Chromium</option>
             <option value="firefox">Firefox</option>
           </select>
@@ -51,7 +52,7 @@
 
     <main id="workbench">
       <aside id="sidebar">
-        <nav class="tabs" data-tabs="sidebar">
+        <nav class="tabs" data-tabs="sidebar" role="tablist" aria-label="Sidebar panels">
           <button data-tab="files" class="active">Files</button>
           <button data-tab="steps">Steps</button>
           <button data-tab="libraries">Libraries</button>
@@ -91,14 +92,20 @@
             <img class="logo" id="welcome-logo" alt="" />
             <h1>Manul Browser Studio</h1>
             <p>Write browser automation in plain English, run it, and watch what it does.</p>
-            <p><button id="welcome-open" class="primary">Open a folder</button></p>
-            <p class="dim">A folder with <code>.hunt</code> files, or an empty one to start in.</p>
+            <p>
+              <button id="welcome-open" class="primary">Open a folder</button>
+              <button id="welcome-demo">Open the demo project</button>
+            </p>
+            <p class="dim">
+              A folder with <code>.hunt</code> files, or an empty one to start in. The demo project is a small shop
+              with hunts written for it, to run, debug and change.
+            </p>
           </div>
           <div id="editor"></div>
         </div>
         <div class="splitter horizontal" data-resize="bottom"></div>
         <section id="bottom">
-          <nav class="tabs" data-tabs="bottom">
+        <nav class="tabs" data-tabs="bottom" role="tablist" aria-label="Run details">
             <button data-tab="results" class="active">Results</button>
             <button data-tab="output">Output</button>
             <button data-tab="variables">Variables</button>
@@ -120,13 +127,14 @@
           <strong>Page</strong>
           <span id="page-source" class="dim"></span>
           <span class="spacer"></span>
+          <button id="shot-zoom" class="quiet" type="button" title="Show screenshot at its original size" disabled>100%</button>
           <button id="live-toggle" title="Open a browser to explore and try steps in">Start live session</button>
         </div>
         <form id="address" class="hidden">
           <input id="url" type="text" placeholder="https://… then Enter" spellcheck="false" />
           <button id="live-refresh" type="button" class="quiet" title="Look at the page again">&#8635;</button>
         </form>
-        <div id="shot-host"><div id="shot-empty" class="dim">No page yet. Start a live session, or run a file with screenshots on.</div><img id="shot" alt="" /></div>
+        <div id="shot-host"><div id="shot-empty" class="dim">No page yet. Start a live session, or run a file with screenshots on.</div><img id="shot" alt="" /><div id="browser-host"></div></div>
         <div class="splitter horizontal" data-resize="map"></div>
         <div id="map-host">
           <div class="pane-actions">

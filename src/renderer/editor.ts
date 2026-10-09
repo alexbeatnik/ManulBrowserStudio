@@ -105,6 +105,10 @@ export class EditorView {
     return !!tab && tab.model.getAlternativeVersionId() !== tab.savedVersion;
   }
 
+  openPaths(): string[] {
+    return [...this.tabs.keys()];
+  }
+
   dirtyPaths(): string[] {
     return [...this.tabs.keys()].filter((p) => this.isDirty(p));
   }

@@ -13,6 +13,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Session } from 'manul-browser';
 import { CLOSED_SNAPSHOT, LiveSnapshot, LiveStepOutcome, MapGroup, Settings } from '../shared/api';
+import type { BuiltInBrowser } from './builtInBrowser';
 import { EngineService } from './engineService';
 
 /** The file name the preview screenshot is taken under, and removed from. */
@@ -25,12 +26,15 @@ export class LiveService {
   private session?: Session;
   private cwd = '';
   private browser = '';
+  /** The session is of the built-in browser, which it did not start. */
+  private attached = false;
   /** Calls are made one at a time: the session is one conversation. */
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly engines: EngineService,
     private readonly settings: () => Settings,
+    private readonly builtIn: BuiltInBrowser,
   ) {}
 
   private serial<T>(work: () => Promise<T>): Promise<T> {
@@ -48,17 +52,28 @@ export class LiveService {
         // open, as they would in a hunt run from it.
         this.cwd = settings.workspace || fs.mkdtempSync(path.join(os.tmpdir(), 'manul-browser-studio-'));
         const { Session } = await import('manul-browser');
-        this.session = await Session.launch({
-          binary: engine.path,
-          browser: settings.browser,
-          headless: settings.headless,
-          // Not the default port: a run of a file launches its own browser
-          // there, and so may the author's own Chrome.
-          port: await freePort(),
-          cwd: this.cwd,
-          stderr: 'ignore',
-        });
-        this.browser = this.session.browser || settings.browser;
+        this.attached = settings.browser === 'builtin';
+        if (this.attached) {
+          // The page in the panel: there already, and left there afterwards.
+          this.session = await Session.attach(await this.builtIn.endpoint(), {
+            binary: engine.path,
+            cwd: this.cwd,
+            stderr: 'ignore',
+          });
+          this.browser = 'built-in';
+        } else {
+          this.session = await Session.launch({
+            binary: engine.path,
+            browser: settings.browser,
+            headless: settings.headless,
+            // Not the default port: a run of a file launches its own browser
+            // there, and so may the author's own Chrome.
+            port: await freePort(),
+            cwd: this.cwd,
+            stderr: 'ignore',
+          });
+          this.browser = this.session.browser || settings.browser;
+        }
       }
       return this.snapshot();
     });
@@ -133,6 +148,8 @@ export class LiveService {
    * that folder as it was found.
    */
   private async screenshot(session: Session): Promise<string> {
+    // The built-in browser is the picture.
+    if (this.attached) return '';
     const dir = path.join(this.cwd, 'screenshots');
     const file = path.join(dir, `${PREVIEW}.png`);
     const dirExisted = fs.existsSync(dir);

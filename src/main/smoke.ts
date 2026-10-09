@@ -1,12 +1,13 @@
 // `electron . --smoke [dir]`: the app checking itself, end to end.
 //
-// It opens a folder with one hunt and one local page in it, and does what a
-// person would: runs the file, with the hook script beside it, debugs it to a
-// breakpoint, steps, asks for an explanation, tries a line in a live session,
-// and asks for completion in the hook script — through the same commands
-// the menu sends, against a real engine and a real browser. What it saw goes
-// to `dir` as screenshots and a report, and the process exits non-zero if any
-// expectation failed.
+// It starts as a first start does, with the demo project, and runs every hunt
+// in it. Then it opens a folder with one hunt and one local page in it, and
+// does what a person would: runs the file, with the hook script beside it,
+// debugs it to a breakpoint, steps, asks for an explanation, tries a line in a
+// live session, and asks for completion in the hook script — through the same
+// commands the menu sends, against a real engine and a real browser. What it
+// saw goes to `dir` as screenshots and a report, and the process exits
+// non-zero if any expectation failed.
 //
 // Unit tests cover the pieces that can be tested without a window. This is
 // the only check that the pieces are wired to each other.
@@ -15,6 +16,8 @@ import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
+import type { BuiltInBrowser } from './builtInBrowser';
+import { DEMO_FOLDER } from './demo';
 
 const PAGE = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Smoke page</title></head>
@@ -80,6 +83,8 @@ interface Snapshot {
   runState: string;
   results: number;
   failed: number;
+  located: number;
+  treeError: string;
   summary: string;
   status: string;
   engine: string;
@@ -99,8 +104,7 @@ interface Snapshot {
   hasShot: boolean;
 }
 
-export async function runSmoke(win: BrowserWindow, dir: string): Promise<number> {
-  fs.rmSync(dir, { recursive: true, force: true });
+export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltInBrowser): Promise<number> {
   const workspace = path.join(dir, 'workspace');
   fs.mkdirSync(workspace, { recursive: true });
   const pageFile = path.join(workspace, 'page.html');
@@ -144,6 +148,103 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
     check('an engine is found', !s.engine.includes('no engine'), s.engine);
     check('the step palette is filled from the catalogue', s.paletteEntries > 30, `${s.paletteEntries} entries`);
 
+    // ── a first start: the demo project ─────────────────────────────────────
+    const demo = path.join(dir, DEMO_FOLDER);
+    const demoHunt = (name: string): string => path.join(demo, 'hunts', name);
+    s = await until('the demo project to open', (x) => x.active === demoHunt('01-first-order.hunt'), 20_000);
+    // The settings named a folder that is not there (main.ts): it is let go
+    // of, and the demo project that was asked for is opened in its place.
+    check('a first start opens the demo project, not a folder that is gone', s.workspace === demo, s.workspace);
+    check('nothing in the tree is an error', !s.treeError, s.treeError);
+    check(
+      "the demo's plain hunts are given the address of its shop",
+      fs.readFileSync(s.active, 'utf8').includes(`NAVIGATE to ${pathToFileURL(path.join(demo, 'site')).href}/index.html`),
+    );
+    await shoot('0-demo');
+    // What each hunt of the demo comes to: 02 is the one with a step to fix.
+    const expected: Array<[string, number, number]> = [
+      ['01-first-order.hunt', 20, 0],
+      ['02-find-the-bug.hunt', 9, 1],
+      ['03-full-cart.hunt', 25, 0],
+      ['04-delivery-date.hunt', 22, 0],
+    ];
+    for (const [name, results, failed] of expected) {
+      await js(`window.__studio.openFile(${JSON.stringify(demoHunt(name))})`);
+      await until(`${name} to open`, (x) => x.active === demoHunt(name), 10_000);
+      await command('run');
+      await until(`${name} to start`, (x) => x.runState !== 'idle', 15_000);
+      s = await until(`${name} to end`, (x) => x.runState === 'idle');
+      check(
+        `the demo's ${name} ${failed ? 'fails where it is meant to' : 'passes'}`,
+        s.results === results && s.failed === failed,
+        `${s.results} results, ${s.failed} failed`,
+      );
+      // 03 and 04 are built from blocks borrowed from pages/: their steps are
+      // lines of other files, and belong to the USE lines of this one.
+      check(`every step of ${name} is put on a line`, s.located === s.results, `${s.located} of ${s.results}`);
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    await shoot('0-demo-run');
+
+    // ── the built-in browser ────────────────────────────────────────────────
+    // The same hunts, in the page that is in the panel: the engine is not
+    // asked to start a browser but given the address of that page.
+    const choose = (browser: string): Promise<void> =>
+      js(`(() => {
+        const select = document.querySelector('#browser');
+        select.value = ${JSON.stringify(browser)};
+        select.dispatchEvent(new Event('change'));
+      })()`);
+    await choose('builtin');
+    await new Promise((r) => setTimeout(r, 500));
+    for (const [name, results] of [expected[0], expected[3]]) {
+      await js(`window.__studio.openFile(${JSON.stringify(demoHunt(name))})`);
+      await until(`${name} to open`, (x) => x.active === demoHunt(name), 10_000);
+      await command('run');
+      await until(`${name} to start`, (x) => x.runState !== 'idle', 15_000);
+      s = await until(`${name} to end`, (x) => x.runState === 'idle');
+      check(
+        `the demo's ${name} passes in the built-in browser`,
+        s.results === results && s.failed === 0,
+        `${s.results} results, ${s.failed} failed`,
+      );
+      check('and leaves the page panel on the order it placed', s.liveUrl.endsWith('/site/index.html#/thanks'), s.liveUrl);
+    }
+    // The page is drawn by the app over a box of the window, so no picture
+    // of the window has it: it is asked where it is, and for its own.
+    const box = await js<{ x: number; y: number; width: number; height: number }>(
+      `(() => { const r = document.querySelector('#browser-host').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+    );
+    const seen = await builtIn.look();
+    const near = (a: number, b: number): boolean => Math.abs(a - b) <= 1;
+    check(
+      'the built-in browser is in its box in the page panel',
+      seen.visible &&
+        near(seen.bounds.x, box.x) &&
+        near(seen.bounds.y, box.y) &&
+        near(seen.bounds.width, box.width) &&
+        near(seen.bounds.height, box.height),
+      `${JSON.stringify(seen.bounds)} in ${JSON.stringify(box)}`,
+    );
+    fs.writeFileSync(path.join(dir, '0-built-in-page.png'), seen.png);
+    await shoot('0-built-in');
+
+    await js(`window.__studio.openFile(${JSON.stringify(demoHunt('01-first-order.hunt'))})`);
+    const first = fs.readFileSync(demoHunt('01-first-order.hunt'), 'utf8').split('\n');
+    await js(`window.__studio.goto(${first.findIndex((l) => l.includes('NAVIGATE to ')) + 1})`);
+    await new Promise((r) => setTimeout(r, 300));
+    await command('run-line');
+    // The session opens on the page the run left — three things to act on —
+    // and the line then takes it to the shop, which has a button a product.
+    s = await until(
+      'the live session to read the shop in the built-in page',
+      (x) => x.liveOpen && x.liveUrl.endsWith('/site/index.html') && x.mapElements >= 6,
+      30_000,
+    ).catch(() => snapshot());
+    check('a line run in the live session is run in the built-in browser', s.mapElements >= 6, `${s.mapElements} elements mapped`);
+    await choose('chromium');
+    await until('the live session to end with the choice of browser', (x) => !x.liveOpen, 15_000);
+
     await js(`window.__studio.openWorkspace(${JSON.stringify(workspace)})`);
     await js(`window.__studio.openFile(${JSON.stringify(huntFile)})`);
     s = await until('the file to open', (x) => x.active === huntFile, 10_000);
@@ -156,6 +257,16 @@ export async function runSmoke(win: BrowserWindow, dir: string): Promise<number>
     await until('the run to start', (x) => x.runState !== 'idle', 15_000);
     s = await until('the run to end', (x) => x.runState === 'idle');
     await shoot('2-run');
+    const zoom = await js<{ original: boolean; fitted: boolean }>(`(() => {
+      const button = document.querySelector('#shot-zoom');
+      const host = document.querySelector('#shot-host');
+      const shot = document.querySelector('#shot');
+      button.click();
+      const original = host.classList.contains('zoomed') && shot.getBoundingClientRect().width > host.clientWidth;
+      button.click();
+      return { original, fitted: !host.classList.contains('zoomed') && shot.getBoundingClientRect().width <= host.clientWidth };
+    })()`);
+    check('a screenshot can be read at original size and fitted again', zoom.original && zoom.fitted);
     check('every step of the run is reported', s.results === 10, `${s.results} results`);
     check('the hook script beside the hunt is picked up', s.log.includes('manul_hooks.mjs'));
     const printed = await js<string>(`document.querySelector('#results').textContent`);

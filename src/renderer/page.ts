@@ -5,6 +5,10 @@
 // and takes steps one at a time. A run of a file gives only the pictures its
 // steps record, so the map is left as it was and marked as not belonging to
 // the picture above it.
+//
+// With the built-in browser there is no picture: the page itself is in the
+// panel, drawn there by the app, and runs and the live session both happen
+// in it.
 
 import type { LiveSnapshot, MapElement } from '../shared/api';
 import { CLOSED_SNAPSHOT } from '../shared/api';
@@ -26,26 +30,84 @@ export class PagePanel {
   private readonly address = $<HTMLFormElement>('address');
   private readonly url = $<HTMLInputElement>('url');
   private readonly shot = $<HTMLImageElement>('shot');
+  private readonly zoom = $<HTMLButtonElement>('shot-zoom');
   private readonly shotHost = $('shot-host');
   private readonly shotEmpty = $('shot-empty');
+  private readonly browserHost = $('browser-host');
+  private builtIn = false;
   private readonly source = $('page-source');
   private readonly map = $('map');
   private readonly filter = $<HTMLInputElement>('map-filter');
   private snapshot: LiveSnapshot = CLOSED_SNAPSHOT;
   private busy = 0;
+  private shotZoomed = false;
 
   constructor(private readonly events: PageEvents) {
     this.toggle.addEventListener('click', () => void (this.snapshot.open ? this.close() : this.open()));
     $('live-refresh').addEventListener('click', () => void this.refresh());
+    this.zoom.addEventListener('click', () => {
+      this.shotZoomed = !this.shotZoomed;
+      this.shotHost.classList.toggle('zoomed', this.shotZoomed);
+      this.zoom.textContent = this.shotZoomed ? 'Fit' : '100%';
+      this.zoom.title = this.shotZoomed ? 'Fit screenshot to the panel' : 'Show screenshot at its original size';
+    });
     this.address.addEventListener('submit', (e) => {
       e.preventDefault();
       const typed = this.url.value.trim();
       if (!typed) return;
       const target = /^[a-z][a-z0-9+.-]*:/i.test(typed) ? typed : `https://${typed}`;
-      void this.step(`NAVIGATE to ${target}`);
+      if (this.builtIn) void this.visit(target);
+      else void this.step(`NAVIGATE to ${target}`);
     });
     this.filter.addEventListener('input', () => this.renderMap());
+
+    // The built-in browser is told where the box it belongs in is, whenever
+    // that changes. It is drawn above the window, so it is taken away while
+    // the window has something to show over it, and while a splitter beside
+    // it is being dragged.
+    new ResizeObserver(() => this.place()).observe(this.browserHost);
+    window.addEventListener('resize', () => this.place());
+    new MutationObserver(() => this.place()).observe($('dialog-backdrop'), { attributeFilter: ['class'] });
+    document.addEventListener('pointerdown', (e) => {
+      if (!(e.target as HTMLElement).closest?.('.splitter')) return;
+      this.dragging = true;
+      this.place();
+      document.addEventListener(
+        'pointerup',
+        () => {
+          this.dragging = false;
+          this.place();
+        },
+        { once: true },
+      );
+    });
+    studio.onPageState((state) => {
+      if (this.builtIn && document.activeElement !== this.url) this.url.value = state.url;
+    });
     this.render();
+  }
+
+  /** Whether the page is the built-in browser's, and so in the panel itself. */
+  setBuiltIn(on: boolean): void {
+    this.builtIn = on;
+    this.shotHost.classList.toggle('built-in', on);
+    this.render();
+    this.place();
+  }
+
+  private dragging = false;
+
+  private place(): void {
+    const box = this.browserHost.getBoundingClientRect();
+    const covered = this.dragging || !$('dialog-backdrop').classList.contains('hidden');
+    const shown = this.builtIn && !covered && box.width > 0 && box.height > 0;
+    void studio.pagePlace(shown ? { x: box.x, y: box.y, width: box.width, height: box.height } : null);
+  }
+
+  /** Sends the built-in browser to an address; the map follows if there is one. */
+  private async visit(target: string): Promise<void> {
+    await this.working(`Opening ${target}`, () => studio.pageNavigate(target));
+    if (this.snapshot.open) await this.refresh();
   }
 
   get isOpen(): boolean {
@@ -113,6 +175,8 @@ export class PagePanel {
 
   /** Shows a picture a run recorded. The map keeps whatever it last showed. */
   showRunShot(dataUrl: string, caption: string): void {
+    // The built-in browser is showing the run itself.
+    if (this.builtIn) return;
     this.setShot(dataUrl, caption);
     this.map.classList.toggle('stale', this.snapshot.open);
   }
@@ -121,16 +185,22 @@ export class PagePanel {
     if (dataUrl) {
       this.shot.src = dataUrl;
       this.shotEmpty.classList.add('hidden');
+    } else {
+      this.shot.removeAttribute('src');
+      this.shotEmpty.classList.remove('hidden');
     }
     this.source.textContent = caption;
+    this.zoom.disabled = !dataUrl;
   }
 
   private render(): void {
     const open = this.snapshot.open;
     this.toggle.textContent = open ? 'End live session' : 'Start live session';
-    this.address.classList.toggle('hidden', !open);
+    this.zoom.classList.toggle('hidden', this.builtIn);
+    this.address.classList.toggle('hidden', !open && !this.builtIn);
     this.filter.disabled = !open;
-    if (!open && !this.shot.getAttribute('src')) this.source.textContent = '';
+    if (this.builtIn) this.source.textContent = open ? 'live · built-in' : 'built-in';
+    else if (!open && !this.shot.getAttribute('src')) this.source.textContent = '';
     this.renderMap();
   }
 
@@ -159,17 +229,18 @@ export class PagePanel {
         this.map.append(
           h(
             'div',
-            { class: 'el', title: 'Write the step that acts on this', onclick: () => this.events.onPick(el) },
-            h('span', { class: 'role', text: el.role || 'element' }),
-            h('span', { class: 'label', text: el.label }),
+            { class: 'el' },
+            h(
+              'button',
+              { class: 'pick', title: 'Write the step that acts on this', onclick: () => this.events.onPick(el) },
+              h('span', { class: 'role', text: el.role || 'element' }),
+              h('span', { class: 'label', text: el.label }),
+            ),
             h('button', {
               class: 'verify',
               text: 'verify',
               title: 'Write a step that checks this is on the page',
-              onclick: (e) => {
-                e.stopPropagation();
-                this.events.onVerify(el);
-              },
+              onclick: () => this.events.onVerify(el),
             }),
           ),
         );

@@ -1,0 +1,7 @@
+{
+  "site": "file:///",
+  "Domain": "Steppe Goods",
+  "index\\.html$": "Steppe Goods - Shop",
+  "#/cart$": "Steppe Goods - Cart",
+  "#/checkout$": "Steppe Goods - Checkout"
+}

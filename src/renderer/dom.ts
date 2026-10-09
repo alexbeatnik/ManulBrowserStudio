@@ -61,6 +61,14 @@ export function dirname(file: string): string {
   return at > 0 ? file.slice(0, at) : file;
 }
 
+/** What an IPC rejection says, without Electron's wrapping. */
+export function reason(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).replace(
+    /^Error invoking remote method '[^']+': (Error: )?/,
+    '',
+  );
+}
+
 /** `1234` → `1.2s`, `87` → `87ms`. */
 export function duration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
@@ -75,11 +83,25 @@ export function tabs(nav: HTMLElement, onChange?: (id: string) => void): (id: st
     for (const b of buttons) {
       const active = b.dataset.tab === id;
       b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', String(active));
+      b.tabIndex = active ? 0 : -1;
       document.getElementById(b.dataset.tab ?? '')?.classList.toggle('active', active);
     }
     onChange?.(id);
   };
-  for (const b of buttons) b.addEventListener('click', () => show(b.dataset.tab ?? ''));
+  for (const b of buttons) {
+    b.setAttribute('role', 'tab');
+    b.addEventListener('click', () => show(b.dataset.tab ?? ''));
+    b.addEventListener('keydown', (event) => {
+      const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+      if (!direction) return;
+      event.preventDefault();
+      const next = buttons[(buttons.indexOf(b) + direction + buttons.length) % buttons.length];
+      show(next.dataset.tab ?? '');
+      next.focus();
+    });
+  }
+  show(buttons.find((button) => button.classList.contains('active'))?.dataset.tab ?? buttons[0]?.dataset.tab ?? '');
   return show;
 }
 
@@ -106,7 +128,7 @@ export function resizable(
       variable === '--map-h' ? (document.getElementById('map-host')?.getBoundingClientRect().height ?? initial) : initial;
     const move = (ev: PointerEvent): void => {
       const delta = ((axis === 'x' ? ev.clientX : ev.clientY) - start) * sign;
-      const size = Math.min(max(), Math.max(min, basis + delta));
+      const size = Math.min(Math.max(min, max()), Math.max(min, basis + delta));
       root.style.setProperty(variable, `${size}px`);
     };
     const up = (): void => {

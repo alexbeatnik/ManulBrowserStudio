@@ -48,6 +48,7 @@
       "dist/**/*",
       "!dist/**/*.map",
       "data/**/*",
+      "demo/**/*",
       "package.json",
       "LICENSE"
     ],

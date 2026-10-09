@@ -11,6 +11,7 @@ import { hookEnvironment, hookRuntime, resolveHookScript } from '../core/hooks';
 import { parseHunt, StepLocator } from '../core/huntDoc';
 import { buildArgs, HuntRun, stripAnsi } from '../core/runner';
 import { DebugAction, RunEvent, RunRequest, Settings } from '../shared/api';
+import type { BuiltInBrowser } from './builtInBrowser';
 import { EngineService } from './engineService';
 
 export class RunService {
@@ -22,6 +23,7 @@ export class RunService {
     private readonly emit: (event: RunEvent) => void,
     /** The launcher for the app's own Node; see hookRuntime.ts. */
     private readonly builtInNode: () => string,
+    private readonly builtIn: BuiltInBrowser,
   ) {}
 
   get active(): boolean {
@@ -52,12 +54,17 @@ export class RunService {
       if (hookRuntime(hooks) === 'node') env.MANUL_NODE = this.builtInNode();
     }
 
+    // The built-in browser is not started by the engine but attached to: a
+    // page that is there already, made as empty as a new browser would be.
+    const builtIn = settings.browser === 'builtin';
+    if (builtIn) await this.builtIn.reset();
     const { args, dropped } = buildArgs(
       request.file,
       {
         hooks,
-        browser: settings.browser,
-        headless: settings.headless,
+        browser: builtIn ? undefined : settings.browser,
+        headless: builtIn ? undefined : settings.headless,
+        extraArgs: builtIn ? ['--cdp', await this.builtIn.endpoint()] : undefined,
         screenshot: settings.screenshots,
         breakLines: request.mode === 'debug' ? request.breakLines : undefined,
         stepThrough: request.mode === 'step',
@@ -79,7 +86,7 @@ export class RunService {
       this.emit({
         kind: 'step',
         step,
-        line: steps.locate(step.step, step.step_block),
+        line: steps.locate(step.step, step.step_block, step.step_index),
         screenshot: readScreenshot(cwd, step.screenshot_path),
       });
     });

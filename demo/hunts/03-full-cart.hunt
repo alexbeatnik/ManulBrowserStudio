@@ -1,0 +1,39 @@
+# The same shop, written the way a suite is kept: the steps that belong to a
+# page live in pages/ and are borrowed by name, and what a browser cannot
+# know is asked of the hook script (manul_hooks.mjs) with CALL HOST.
+#
+# {shop} is not set anywhere in this file: the hook script sets it before
+# the run starts.
+
+@context: The demo shop: page objects, a loop, and a promo code checked against the hook script's arithmetic
+@title: A full cart
+@tags: cart
+
+@import: Open the shop, Add the product, Open the cart from '../pages/shop.hunt'
+@import: Apply the promo code, Remove the product from '../pages/cart.hunt'
+
+@var: {wanted} = Steel Thermos, Tea Sampler, Field Notebook
+
+STEP 1: Put everything on the list in the cart
+    USE Open the shop
+    FOR EACH {product} IN {wanted}:
+        USE Add the product
+    USE Open the cart
+
+STEP 2: A promo code takes ten percent off
+    EXTRACT the 'Total' into {before}
+    CALL HOST shop.promo_code with args: "autumn" into {code}
+    CALL HOST shop.discounted with args: "{before}" "10" into {expected}
+    USE Apply the promo code
+    VERIFY that '{expected}' is present
+    PRINT "{before} became {expected} with {code}"
+
+STEP 3: Take one thing back out
+    SET {product} = Tea Sampler
+    USE Remove the product
+    IF 'Your cart is empty' is present:
+        PRINT "Nothing is left in the cart"
+    ELSE:
+        VERIFY that 'Steel Thermos' is present
+        VERIFY that 'Field Notebook' is present
+DONE.

@@ -1,0 +1,20 @@
+# A page object: the cart. See pages/shop.hunt for how these are used.
+#
+# {code} and {product} are set by the hunt that uses the block.
+
+@context: Page object: the cart
+@title: Page - Cart
+
+STEP 1: Apply the promo code
+    FILL 'Promo code' field with '{code}'
+    CLICK the 'Apply' button
+    VERIFY that 'Promo code applied' is present
+
+STEP 2: Remove the product
+    CLICK the 'Remove' button NEAR '{product}'
+    VERIFY that '{product} removed' is present
+
+STEP 3: Go to checkout
+    CLICK the 'Checkout' button
+    VERIFY that 'Full name' is present
+DONE.

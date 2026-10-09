@@ -7,7 +7,25 @@
 import type { Catalogue, CatalogueEntry } from '../core/catalogue';
 import type { ExplainEvent, HuntResult, PauseEvent, StepResult } from '../core/runner';
 
-export type BrowserName = 'chromium' | 'firefox';
+/**
+ * `builtin` is the page in the page panel, which is the app's own Chromium;
+ * the others are browsers on the machine, which the engine starts.
+ */
+export type BrowserName = 'builtin' | 'chromium' | 'firefox';
+
+/** A rectangle of the window, in the window's own pixels. */
+export interface PageRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Where the built-in browser is; `url` is '' before it has been anywhere. */
+export interface PageState {
+  url: string;
+  title: string;
+}
 export type ScreenshotMode = 'none' | 'on-fail' | 'always';
 
 export interface Settings {
@@ -18,14 +36,23 @@ export interface Settings {
   browser: BrowserName;
   headless: boolean;
   screenshots: ScreenshotMode;
+  /** The yes to the demo project that has been acted on; '' when none has. */
+  demoOffer: string;
 }
+
+/**
+ * Who has just asked for the demo project: the installer, on its own page, or
+ * nobody in particular — a first run from source. '' when nobody has.
+ */
+export type DemoOffer = '' | 'installer' | 'source';
 
 export const DEFAULT_SETTINGS: Settings = {
   workspace: '',
   enginePath: '',
-  browser: 'chromium',
+  browser: 'builtin',
   headless: false,
   screenshots: 'on-fail',
+  demoOffer: '',
 };
 
 export interface DirEntry {
@@ -136,6 +163,7 @@ export interface RuntimeInfo {
 
 export type MenuCommand =
   | 'open-folder'
+  | 'open-demo'
   | 'new-file'
   | 'new-folder'
   | 'new-hooks'
@@ -164,6 +192,13 @@ export interface StudioApi {
   createFolder(dir: string, name: string): Promise<string>;
   /** Creates a starter hook script at the top of the open folder; resolves to its path. */
   createHookScript(): Promise<string>;
+  /**
+   * Makes sure the person has their copy of the demo project; resolves to its
+   * folder and the file to show first.
+   */
+  openDemo(): Promise<{ folder: string; file: string }>;
+  /** Whether the demo project has just been asked for. Answers once per asking. */
+  demoOffer(): Promise<DemoOffer>;
 
   engine(): Promise<EngineStatus>;
   catalogue(): Promise<CatalogueView>;
@@ -187,6 +222,15 @@ export interface StudioApi {
   liveClose(): Promise<void>;
   liveRefresh(): Promise<LiveSnapshot>;
   liveStep(step: string): Promise<{ outcome: LiveStepOutcome; snapshot: LiveSnapshot }>;
+
+  /**
+   * Puts the built-in browser over a rectangle of the window, or — with
+   * null — out of sight. It is drawn above everything the window draws.
+   */
+  pagePlace(rect: PageRect | null): Promise<void>;
+  /** Sends the built-in browser to an address. */
+  pageNavigate(url: string): Promise<void>;
+  onPageState(listener: (state: PageState) => void): void;
 
   onMenu(listener: (command: MenuCommand) => void): void;
 }

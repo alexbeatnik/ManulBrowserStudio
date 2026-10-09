@@ -1,0 +1,26 @@
+# A page object: what can be done on the shop's first page, as blocks a hunt
+# borrows by name.
+#
+#     @import: Open the shop, Add the product from '../pages/shop.hunt'
+#     ...
+#     USE Open the shop
+#
+# A block is run with the variables of the hunt that uses it. {shop} comes
+# from the hook script; {product} is set by the hunt, or by its loop.
+# This file is not a hunt to run on its own.
+
+@context: Page object: the shop's catalogue
+@title: Page - Shop
+
+STEP 1: Open the shop
+    NAVIGATE to {shop}/index.html
+    VERIFY that 'Steppe Goods' is present
+
+STEP 2: Add the product
+    CLICK the 'Add to cart' button NEAR '{product}'
+    VERIFY that '{product} added to cart' is present
+
+STEP 3: Open the cart
+    CLICK the 'Cart' button
+    VERIFY that 'Your cart' is present
+DONE.
