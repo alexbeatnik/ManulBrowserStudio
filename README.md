@@ -92,9 +92,9 @@ beside this one), widened at run time by whatever the installed engine's
 ### What needs a particular engine
 
 Variables at a debug pause use the `vars` command of debug contract 0.2.1,
-which the engine has from 0.1.3 — the version that comes with the app. A
-project that pins an older engine is still run on its own engine and gets
-everything else; the Variables panel just stays empty while it is paused.
+which the engine has from 0.1.3; the app comes with 0.1.4. A project that
+pins an older engine is still run on its own engine and gets everything else;
+the Variables panel just stays empty while it is paused.
 
 ## Layout
 
