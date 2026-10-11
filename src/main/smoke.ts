@@ -12,6 +12,7 @@
 // Unit tests cover the pieces that can be tested without a window. This is
 // the only check that the pieces are wired to each other.
 
+import { execFileSync } from 'child_process';
 import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -85,6 +86,12 @@ interface Snapshot {
   failed: number;
   located: number;
   treeError: string;
+  gitBranch: string;
+  gitChanges: string[];
+  gitConflicts: string[];
+  gitOperation: string;
+  diffOpen: string;
+  conflictsInEditor: number;
   summary: string;
   status: string;
   engine: string;
@@ -102,6 +109,7 @@ interface Snapshot {
   tabIcons: number;
   log: string;
   hasShot: boolean;
+  still: boolean;
 }
 
 export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltInBrowser): Promise<number> {
@@ -208,8 +216,65 @@ export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltIn
         s.results === results && s.failed === 0,
         `${s.results} results, ${s.failed} failed`,
       );
-      check('and leaves the page panel on the order it placed', s.liveUrl.endsWith('/site/index.html#/thanks'), s.liveUrl);
+      // The page itself is gone with the run; what is left to look at is a
+      // picture of where it ended.
+      check('and leaves a picture of the page it ended on', s.still && s.hasShot && s.liveUrl === '', `${s.still} ${s.liveUrl}`);
     }
+
+    // A run ends with the browser made new. A hunt whose page stores
+    // something, in the two places a page can: afterwards, with no run in
+    // between, the same page is asked what it finds there.
+    const keeper = path.join(demo, 'site', 'keeper.html');
+    fs.writeFileSync(
+      keeper,
+      `<!doctype html><title>Keeper</title><p id="found"></p><script>
+        document.getElementById('found').textContent =
+          'found: ' + localStorage.getItem('kept') + ',' + sessionStorage.getItem('kept') + ',' + history.length;
+        if (location.search !== '?read') {
+          localStorage.setItem('kept', 'yes');
+          sessionStorage.setItem('kept', 'yes');
+          document.title = 'Stored';
+        }
+      </script><p>Something is stored</p>`,
+    );
+    const keeperHunt = demoHunt('keeper.hunt');
+    fs.writeFileSync(
+      keeperHunt,
+      `@title: keeper\n\nSTEP 1: Store something\n    NAVIGATE to ${pathToFileURL(keeper).href}\n    VERIFY that 'Something is stored' is present\nDONE.\n`,
+    );
+    await js(`window.__studio.openFile(${JSON.stringify(keeperHunt)})`);
+    await until('the keeper hunt to open', (x) => x.active === keeperHunt, 10_000);
+    await command('run');
+    await until('the keeper hunt to start', (x) => x.runState !== 'idle', 15_000);
+    const during = builtIn.pageId;
+    s = await until('the keeper hunt to end', (x) => x.runState === 'idle');
+    const after = builtIn.pageId;
+    await js(`(() => {
+      const address = document.querySelector('#url');
+      address.value = ${JSON.stringify(`${keeper}?read`)};
+      address.form.requestSubmit();
+    })()`);
+    await until('the built-in page to go back to the keeper', (x) => x.liveUrl.endsWith('keeper.html?read'), 15_000).catch(() => undefined);
+    const found = await builtIn.probe<string>(`document.getElementById('found').textContent`);
+    // Two pages of history: the browser's blank one, and this. The run's own
+    // visit would have been a third.
+    check(
+      'a run ends with the built-in browser reset: another page, with nothing stored and no history',
+      s.failed === 0 && s.results === 2 && after !== during && found === 'found: null,null,2',
+      `page ${during} then ${after}; ${found}`,
+    );
+    // The address above the page takes it somewhere: here a path on disk,
+    // typed the way a path is written.
+    const shopFile = path.join(demo, 'site', 'index.html');
+    await js(`(() => {
+      const address = document.querySelector('#url');
+      address.value = ${JSON.stringify(shopFile)};
+      address.form.requestSubmit();
+    })()`);
+    s = await until('the built-in page to go where it was sent', (x) => x.liveUrl === pathToFileURL(shopFile).href, 15_000).catch(
+      () => snapshot(),
+    );
+    check('an address typed above the built-in page is gone to', s.liveUrl === pathToFileURL(shopFile).href, s.liveUrl);
     // The page is drawn by the app over a box of the window, so no picture
     // of the window has it: it is asked where it is, and for its own.
     const box = await js<{ x: number; y: number; width: number; height: number }>(
@@ -352,6 +417,148 @@ export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltIn
       onProcess.slice(0, 6).join(', ') || 'nothing offered',
     );
     await shoot('5-hooks');
+
+    // ── git ─────────────────────────────────────────────────────────────────
+    // The folder becomes a repository with a remote, a change is looked at,
+    // committed and pushed; then somebody else changes the same line first,
+    // and the pull that meets it is settled in the editor and finished.
+    const git = (cwd: string, ...args: string[]): string =>
+      execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    let gitHere = true;
+    try {
+      git(dir, '--version');
+    } catch {
+      gitHere = false;
+    }
+    if (!gitHere) {
+      console.log('note the Git pane was not checked: there is no git on this machine');
+    } else {
+      const remote = path.join(dir, 'remote.git');
+      git(dir, 'init', '--bare', '--initial-branch=main', remote);
+      const press = (selector: string, text?: string): Promise<boolean> =>
+        js<boolean>(`(() => {
+          const wanted = ${JSON.stringify(text ?? '')};
+          const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => !wanted || e.textContent === wanted);
+          if (!el || el.disabled) return false;
+          el.click();
+          return true;
+        })()`);
+      const commit = (message: string): Promise<void> =>
+        js(`(() => {
+          const box = document.querySelector('#git-message');
+          box.value = ${JSON.stringify(message)};
+          box.dispatchEvent(new Event('input'));
+          box.form.requestSubmit();
+        })()`);
+
+      await press('[data-tab="git"]');
+      await new Promise((r) => setTimeout(r, 500));
+      await press('#git-list button', 'Make it one');
+      s = await until('the folder to become a repository', (x) => x.gitChanges.length > 0, 15_000);
+      // The hunt and its page, and not the reports and screenshots the runs
+      // above left: the new repository is told to ignore those.
+      check(
+        'the Git pane makes the folder a repository and lists what is in it',
+        s.gitChanges.includes('smoke.hunt') &&
+          s.gitChanges.includes('page.html') &&
+          !s.gitChanges.some((p) => p.startsWith('reports/') || p.startsWith('screenshots/')),
+        s.gitChanges.join(', '),
+      );
+      // Who commits, and where to: a person's own settings, which a check
+      // must neither read nor change.
+      git(workspace, 'symbolic-ref', 'HEAD', 'refs/heads/main');
+      git(workspace, 'config', 'user.name', 'Smoke');
+      git(workspace, 'config', 'user.email', 'smoke@example.com');
+      git(workspace, 'config', 'core.autocrlf', 'false');
+      git(workspace, 'remote', 'add', 'origin', remote);
+
+      await press('#git-list .git-file[data-path="smoke.hunt"] .show');
+      s = await until('the change to be shown', (x) => x.diffOpen === 'smoke.hunt', 10_000).catch(() => snapshot());
+      check('a changed file is shown as it was and as it is', s.diffOpen === 'smoke.hunt', s.diffOpen);
+      await shoot('7-git-diff');
+      await press('#diff-close');
+
+      await commit('first');
+      s = await until('the commit to be made', (x) => x.gitChanges.length === 0, 30_000).catch(() => snapshot());
+      check('a commit takes the ticked files', s.gitChanges.length === 0 && s.gitBranch.startsWith('main'), s.gitBranch);
+      await press('#git-push');
+      await until('the push to be made', (x) => x.gitBranch === 'main', 30_000).catch(() => undefined);
+      const pushed = git(remote, 'log', '--format=%s', 'main').trim();
+      check('a push takes the branch to its remote, and gives it an upstream', pushed === 'first', pushed);
+
+      // Somebody else, in a clone of their own, gets to the title first.
+      const other = path.join(dir, 'other');
+      // Line endings as they are, from the start: a clone that changed them
+      // on the way out would commit every file as changed.
+      git(dir, 'clone', '-c', 'core.autocrlf=false', remote, other);
+      git(other, 'config', 'user.name', 'Other');
+      git(other, 'config', 'user.email', 'other@example.com');
+      const theirs = fs.readFileSync(path.join(other, 'smoke.hunt'), 'utf8').replace('@title: smoke', '@title: theirs');
+      fs.writeFileSync(path.join(other, 'smoke.hunt'), theirs);
+      git(other, 'commit', '-am', 'theirs');
+      git(other, 'push', 'origin', 'HEAD:main');
+
+      // Here it is changed too, in the editor. Saving it is what makes it a
+      // change: the pane lists it without being asked.
+      await js(`window.__studio.openFile(${JSON.stringify(huntFile)})`);
+      await until('the hunt to be in front', (x) => x.active === huntFile, 10_000);
+      await js(`(() => {
+        const model = window.__studio.editor.editor.getModel();
+        model.setValue(model.getValue().replace('@title: smoke', '@title: mine'));
+      })()`);
+      await command('save');
+      s = await until('the saved change to be listed', (x) => x.gitChanges.includes('smoke.hunt'), 15_000).catch(() => snapshot());
+      check('a file saved in the editor is listed as changed', s.gitChanges.join() === 'smoke.hunt', s.gitChanges.join());
+      await commit('mine');
+      s = await until('the second commit', (x) => x.gitBranch.includes('↑1'), 30_000).catch(() => snapshot());
+      check('and committed', git(workspace, 'show', 'HEAD:smoke.hunt').includes('@title: mine'), s.gitBranch);
+
+      await press('#git-pull');
+      s = await until('the pull to meet the conflict', (x) => x.gitOperation === 'merge', 30_000).catch(() => snapshot());
+      check('a pull that conflicts says which file', s.gitConflicts.join() === 'smoke.hunt', `${s.gitOperation}: ${s.gitConflicts.join()}`);
+      s = await until('the open file to show its conflict', (x) => x.conflictsInEditor > 0, 10_000).catch(() => snapshot());
+      check('the file in the editor is read again, with its conflict marked', s.conflictsInEditor > 0);
+      await shoot('8-git-conflict');
+
+      // "Accept incoming", above the conflict: a link the editor draws, so
+      // it is clicked the way a person clicks it.
+      const link = await js<{ x: number; y: number } | null>(`new Promise((resolve) => {
+        const end = Date.now() + 15000;
+        const look = () => {
+          const a = [...document.querySelectorAll('#editor .codelens-decoration a')].find((l) => l.textContent === 'Accept incoming');
+          if (a) {
+            const r = a.getBoundingClientRect();
+            resolve({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) });
+          } else if (Date.now() > end) resolve(null);
+          else setTimeout(look, 200);
+        };
+        look();
+      })`);
+      if (link) {
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: link.x, y: link.y, button: 'left', clickCount: 1 });
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: link.x, y: link.y, button: 'left', clickCount: 1 });
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      const settled = await js<string>('window.__studio.editor.editor.getModel().getValue()');
+      check(
+        'a conflict is settled in the editor, from the choices above it',
+        !!link && settled.includes('@title: theirs') && !settled.includes('<<<<<<<') && !settled.includes('@title: mine'),
+        link ? settled.split('\n')[0] : 'the choices were not offered',
+      );
+
+      // Taken as it now is — saved on the way — and the merge finished.
+      await press('#git-list .git-file.conflict .settle button', 'resolved');
+      s = await until('the file to be taken as resolved', (x) => x.gitConflicts.length === 0, 20_000).catch(() => snapshot());
+      check('a file settled by hand is taken as resolved', s.gitConflicts.length === 0 && s.gitOperation === 'merge', s.gitConflicts.join());
+      await press('#git-operation button.primary');
+      s = await until('the merge to be finished', (x) => x.gitOperation === '', 30_000).catch(() => snapshot());
+      check('the merge is finished', s.gitOperation === '' && s.gitChanges.length === 0, `${s.gitOperation} ${s.gitChanges.join()}`);
+      await press('#git-push');
+      await until('the merge to be pushed', (x) => x.gitBranch === 'main', 30_000).catch(() => undefined);
+      const history = git(remote, 'log', '--format=%s', 'main').trim().split('\n');
+      check('and pushed', history.length === 4 && history.includes('theirs') && history.includes('mine'), history.join(' | '));
+      await press('[data-tab="files"]');
+    }
 
     // ── folders, and libraries for hook scripts ─────────────────────────────
     s = await snapshot();

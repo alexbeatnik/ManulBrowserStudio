@@ -6,11 +6,14 @@ import './styles.css';
 import * as monaco from 'monaco-editor';
 import type { CatalogueEntry } from '../core/catalogue';
 import type { BrowserName, MenuCommand, RunEvent, ScreenshotMode, Settings } from '../shared/api';
-import { runnableLine, stepForElement, verifyForElement } from '../shared/steps';
+import { borrowedBlock, runnableLine, stepForElement, verifyForElement } from '../shared/steps';
 import { ask, choose, tell } from './dialogs';
 import { $, basename, clear, dirname, duration, h, reason, resizable, studio, tabs } from './dom';
+import { registerConflicts } from './conflicts';
+import { DiffView } from './diff';
 import { EditorView } from './editor';
 import { Explorer } from './explorer';
+import { GitPane } from './git';
 import { registerHunt, setCatalogue } from './hunt';
 import { MANUL_ICON } from './icons';
 import { completionsAt, setUpScriptLanguages } from './languages';
@@ -30,6 +33,8 @@ class App {
   private readonly panels: Panels;
   private readonly page: PagePanel;
   private readonly libraries: Libraries;
+  private readonly git: GitPane;
+  private readonly diff: DiffView;
   private readonly showBottom: (pane: string) => void;
   private readonly showSidebar: (pane: string) => void;
 
@@ -56,11 +61,17 @@ class App {
       // it at the top; the news is at the other end.
       if (pane === 'output') $('output').scrollTop = $('output').scrollHeight;
     });
-    this.showSidebar = tabs(document.querySelector<HTMLElement>('[data-tabs="sidebar"]')!);
+    this.showSidebar = tabs(document.querySelector<HTMLElement>('[data-tabs="sidebar"]')!, (pane) => {
+      // The pane is looked at: what it shows should be how things are now.
+      // (Asked by the tabs once before the pane itself exists.)
+      if (pane === 'git') void this.git?.refresh();
+    });
 
     this.editor = new EditorView($('editor'), $('editor-tabs'), {
       onActivate: (path) => {
         this.explorer.setActive(path);
+        // A file brought to the front is what is wanted in front.
+        if (path) this.diff?.close();
         this.refreshChrome();
       },
       onCursor: (line, column) => {
@@ -69,10 +80,7 @@ class App {
       confirmClose: (path) => this.confirmClose(path),
     });
     this.explorer = new Explorer($('tree'), (file) => void this.openFile(file));
-    this.panels = new Panels(this.showBottom, (line) => {
-      if (this.runFile && this.editor.isOpen(this.runFile)) this.editor.activate(this.runFile);
-      this.editor.reveal(line);
-    });
+    this.panels = new Panels(this.showBottom, (line, file = this.runFile) => void this.revealLine(file, line));
     this.page = new PagePanel({
       onPick: (el) => this.writeStep(stepForElement(el)),
       onVerify: (el) => this.writeStep({ text: verifyForElement(el) }),
@@ -80,15 +88,41 @@ class App {
       onVariables: (vars) => {
         if (this.runState === 'idle') this.panels.setVariables(vars);
       },
-      onError: (message) => void tell('Live session', message),
+      onError: (whose, message) => void tell(whose, message),
     });
 
     this.libraries = new Libraries({
       onStart: () => this.showBottom('output'),
       onStatus: (text) => this.status(text),
       onError: (title, message) => void tell(title, message),
+      // npm writes package.json and its lockfile beside the hunts.
+      onDone: () => {
+        void this.explorer.refresh();
+        void this.git.refresh();
+      },
     });
     studio.onPackageLog((line) => this.panels.addLog(line));
+
+    this.diff = new DiffView((file) => void this.openFile(file));
+    this.git = new GitPane({
+      beforeChange: () => this.saveAll(),
+      afterChange: () => this.readAgain(),
+      openFile: (file) => void this.openFile(file),
+      showDiff: (file) => void this.diff.show(file),
+      onStart: () => this.showBottom('output'),
+      onStatus: (text) => this.status(text),
+      onError: (title, message) => void tell(title, message),
+      onCount: (changed) => {
+        $('git-tab').textContent = changed ? `Git ${changed}` : 'Git';
+      },
+    });
+    studio.onGitLog((line) => this.panels.addLog(line));
+    registerConflicts(this.editor.editor);
+    // Back from a terminal, or another program: things may have moved.
+    window.addEventListener('focus', () => {
+      void this.explorer.refresh();
+      void this.git.refresh();
+    });
 
     $<HTMLImageElement>('welcome-logo').src = MANUL_ICON;
     this.wireToolbar();
@@ -122,6 +156,7 @@ class App {
     this.loadScriptTypes();
     void this.libraries.showRuntime();
     void this.libraries.refresh(this.settings.workspace);
+    void this.git.refresh(this.settings.workspace);
 
     // The demo project, when it has just been asked for. With nothing else to
     // open it is opened; a person with a folder of their own open keeps it.
@@ -283,16 +318,20 @@ class App {
 
   async openWorkspace(folder: string): Promise<void> {
     for (const path of this.editor.dirtyPaths()) await this.save(path);
+    const leaving = folder !== this.settings.workspace;
     // The files of the folder being left cannot be saved once it is closed.
-    if (folder !== this.settings.workspace) for (const path of this.editor.openPaths()) await this.editor.close(path);
+    if (leaving) for (const path of this.editor.openPaths()) await this.editor.close(path);
     this.settings = await studio.setSettings({ workspace: folder });
     // The live session was that folder's; the main process has closed it.
-    this.page.closedElsewhere();
+    // Opening the folder that is open already closes nothing.
+    if (leaving) this.page.closedElsewhere();
     await this.explorer.setRoot(folder);
     this.refreshChrome();
     await this.loadEngine();
     this.loadScriptTypes();
     void this.libraries.refresh(folder);
+    this.diff.close();
+    void this.git.refresh(folder);
   }
 
   async openFile(file: string): Promise<void> {
@@ -304,11 +343,47 @@ class App {
     }
   }
 
+  /**
+   * Shows a 0-based line of a file: the one a result belongs to, which need
+   * not be the one in front, nor open any more.
+   */
+  private async revealLine(file: string, line: number): Promise<void> {
+    if (file && this.editor.activePath !== file) await this.openFile(file);
+    // Not opened — deleted since — means there is no such line to show.
+    if (!file || this.editor.activePath === file) this.editor.reveal(line);
+  }
+
+  /** Writes every file that has unsaved text. False when one could not be written. */
+  private async saveAll(): Promise<boolean> {
+    for (const path of this.editor.dirtyPaths()) if (!(await this.save(path))) return false;
+    return true;
+  }
+
+  /**
+   * Brings the window in line with a disk that git has just rewritten: the
+   * tree, and every open file — its new text, or its tab closed when the
+   * file is gone.
+   */
+  private async readAgain(): Promise<void> {
+    for (const path of this.editor.openPaths()) {
+      // Typed since git was asked to act: theirs to keep or to lose.
+      if (this.editor.isDirty(path)) continue;
+      try {
+        this.editor.replaceText(path, await studio.readFile(path));
+      } catch {
+        this.editor.drop(path);
+      }
+    }
+    await this.explorer.refresh();
+  }
+
   private async save(path = this.editor.activePath): Promise<boolean> {
     if (!path) return false;
     try {
+      const version = this.editor.version(path);
       await studio.writeFile(path, this.editor.text(path));
-      this.editor.markSaved(path);
+      this.editor.markSaved(path, version);
+      void this.git.refresh();
       return true;
     } catch (err) {
       await tell('Could not save the file', reason(err));
@@ -413,15 +488,24 @@ class App {
     const at = this.editor.currentLine();
     if (!path || !at || !this.editor.activeIsHunt) return;
     const step = runnableLine(at.text);
-    if (!step) return this.status('There is no step on this line to run.');
+    if (!step) {
+      return this.status(
+        borrowedBlock(at.text)
+          ? 'A borrowed block runs with its file (F5). Its steps can be run one at a time in the file they are in.'
+          : 'There is no step on this line to run.',
+      );
+    }
     if (this.runState !== 'idle') return this.status('A file is running; the live session waits for it.');
     if (!this.page.isOpen && !(await this.page.open())) return;
 
     const outcome = await this.page.step(step);
     if (!outcome) return;
-    this.panels.addLive(outcome, at.line);
+    this.panels.addLive(outcome, at.line, path);
     this.editor.markLine(path, at.line, outcome.ok, outcome.ok ? '' : outcome.error || outcome.reason);
-    const model = this.editor.editor.getModel();
+    // The caret moves on in the file the line was run from, if that is still
+    // the one in front: the step took a moment, and a tab may have been
+    // chosen meanwhile.
+    const model = this.editor.activePath === path ? this.editor.editor.getModel() : null;
     if (outcome.ok && model && at.line + 2 <= model.getLineCount()) {
       this.editor.editor.setPosition({ lineNumber: at.line + 2, column: model.getLineMaxColumn(at.line + 2) });
     }
@@ -435,6 +519,8 @@ class App {
     if (this.runState !== 'idle' || !file || !this.editor.activeIsHunt) return;
     // The engine reads the file from disk.
     if (this.editor.isDirty(file) && !(await this.save(file))) return;
+    // Saving took a moment, and the key may have been pressed again in it.
+    if (this.runState !== 'idle') return;
 
     const breakLines = this.editor.breakpoints(file);
     this.runFile = file;
@@ -478,6 +564,8 @@ class App {
         this.stepsDone = 0;
         this.verdict = '';
         this.lineTime.clear();
+        // The built-in browser was made new for the run, live session and all.
+        if (this.settings.browser === 'builtin') this.page.renewed();
         this.panels.addLog(`$ ${event.commandLine}`);
         if (event.dropped.length) {
           this.panels.addLog(`This engine does not know ${event.dropped.join(', ')}; left out.`);
@@ -525,9 +613,12 @@ class App {
       case 'exit':
         this.editor.setPaused(undefined);
         this.setRunState('idle');
-        // A run in the built-in browser has left the live session's page
-        // somewhere its list of elements knows nothing about.
-        if (this.settings.browser === 'builtin' && this.page.isOpen) void this.page.refresh();
+        // A run leaves reports, and screenshots, in the folder.
+        void this.explorer.refresh();
+        void this.git.refresh();
+        // A run in the built-in browser ends with the browser made new: the
+        // panel keeps a picture of where it ended, and nothing else of it.
+        if (event.still !== undefined) this.page.renewed(event.still);
         if (event.error) {
           this.status(`The engine could not be run: ${event.error}`);
           this.showBottom('output');
@@ -682,6 +773,12 @@ class App {
       paletteEntries: document.querySelectorAll('#palette .entry').length,
       fileIcons: document.querySelectorAll('#tree .row .ficon').length,
       treeError: document.querySelector('#tree .empty.error')?.textContent ?? '',
+      gitBranch: $('git-branch').textContent ?? '',
+      gitChanges: [...document.querySelectorAll<HTMLElement>('#git-list .git-file:not(.conflict)')].map((r) => r.dataset.path ?? ''),
+      gitConflicts: [...document.querySelectorAll<HTMLElement>('#git-list .git-file.conflict')].map((r) => r.dataset.path ?? ''),
+      gitOperation: this.git.current.operation,
+      diffOpen: this.diff.path,
+      conflictsInEditor: document.querySelectorAll('#editor .conflict-marker.current').length,
       folders: [...document.querySelectorAll<HTMLElement>('#tree .row[data-dir]')].map((r) => r.textContent ?? ''),
       node: $('status-node').textContent ?? '',
       libraries: [...document.querySelectorAll('#lib-list .lib')].map((r) => r.textContent ?? ''),
@@ -689,6 +786,7 @@ class App {
       tabIcons: document.querySelectorAll('#editor-tabs .tab .ficon').length,
       log: $('log').textContent ?? '',
       hasShot: !!$('shot').getAttribute('src'),
+      still: $('shot-host').classList.contains('still'),
     };
   }
 

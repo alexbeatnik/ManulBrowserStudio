@@ -9,6 +9,7 @@ import {
   CatalogueView,
   DebugAction,
   DemoOffer,
+  GitResolution,
   MenuCommand,
   PageRect,
   RunEvent,
@@ -19,6 +20,7 @@ import { BuiltInBrowser } from './builtInBrowser';
 import { hookTemplate, HOOK_BASENAMES } from '../core/hooks';
 import { openDemo } from './demo';
 import { EngineService } from './engineService';
+import { GitService } from './git';
 import { builtInNode } from './hookRuntime';
 import { LiveService } from './live';
 import { PackageService } from './packages';
@@ -161,6 +163,13 @@ function main(): void {
     // what a Node outside the app needs to import it.
     () => builtInNode(hookRuntimeHomes(), process.execPath, engineRoot),
     builtIn,
+    async (picture) => {
+      const still = picture ? await builtIn.picture() : '';
+      // The live session is of the page that is about to go.
+      await live.close();
+      await builtIn.reset();
+      return still;
+    },
   );
   const live = new LiveService(engines, settings, builtIn);
   // npm keeps its dependencies inside its own folder, which the packager
@@ -170,6 +179,11 @@ function main(): void {
     ? path.join(process.resourcesPath, 'npm')
     : path.join(appRoot, 'node_modules', 'npm');
   const packages = new PackageService(settings, npmDir, (line) => send('studio:packageLog', line));
+
+  const git = new GitService(
+    () => settings().workspace,
+    (line) => send('studio:gitLog', line),
+  );
 
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void => {
     ipcMain.handle(`studio:${channel}`, (_event, ...args) => fn(...(args as A)));
@@ -256,6 +270,16 @@ function main(): void {
   handle('liveRefresh', () => live.refresh());
   handle('liveStep', (step: string) => live.step(step));
 
+  handle('gitStatus', () => git.status());
+  handle('gitInit', () => git.init());
+  handle('gitDiff', (file: string) => git.diff(file));
+  handle('gitCommit', (message: string, paths: string[]) => git.commit(message, paths));
+  handle('gitPull', () => git.pull());
+  handle('gitPush', () => git.push());
+  handle('gitResolve', (file: string, how: GitResolution) => git.resolve(file, how));
+  handle('gitContinue', () => git.continue());
+  handle('gitAbort', () => git.abort());
+
   handle('pagePlace', (rect: PageRect | null) => {
     // The window says where in its own pixels, which a zoomed window has
     // fewer of.
@@ -268,7 +292,17 @@ function main(): void {
 
   // Emptied here and not by the smoke run: the window may put the demo
   // project in it before the run has begun.
-  if (smokeOut !== undefined) fs.rmSync(smokeOut, { recursive: true, force: true });
+  if (smokeOut !== undefined) {
+    try {
+      removeTree(smokeOut);
+    } catch (err) {
+      // With no window there would be nothing to check, and nothing to end
+      // the wait for it.
+      console.error(`could not clear ${smokeOut}:`, err);
+      app.exit(1);
+      return;
+    }
+  }
   Menu.setApplicationMenu(buildMenu());
   window = createWindow();
 
@@ -334,6 +368,33 @@ function hookRuntimeHomes(): string[] {
   }
   homes.push(path.join(app.getPath('userData'), 'hook-runtime'));
   return homes;
+}
+
+/**
+ * Removes what the last smoke run left. It leaves repositories, and git keeps
+ * its objects read-only, which on Windows is enough to stop them being
+ * deleted: each file is made writable first.
+ */
+function removeTree(dir: string): void {
+  const loosen = (entry: string): void => {
+    let stat: fs.Stats;
+    try {
+      stat = fs.lstatSync(entry);
+    } catch {
+      return;
+    }
+    if (stat.isDirectory()) {
+      for (const name of fs.readdirSync(entry)) loosen(path.join(entry, name));
+    } else {
+      try {
+        fs.chmodSync(entry, 0o666);
+      } catch {
+        // Not ours to change; the removal below will say so if it matters.
+      }
+    }
+  };
+  loosen(dir);
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
 }
 
 /** The value after a flag, '' when the flag is last or followed by another. */

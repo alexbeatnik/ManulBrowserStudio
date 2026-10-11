@@ -9,6 +9,8 @@ export interface LibraryEvents {
   onStart(): void;
   onStatus(text: string): void;
   onError(title: string, message: string): void;
+  /** npm has finished, and may have written files into the folder. */
+  onDone(): void;
 }
 
 /** What an IPC rejection says, without Electron's wrapping. */
@@ -111,6 +113,7 @@ export class Libraries {
       this.events.onError('Libraries', reason(err));
     } finally {
       this.busy = false;
+      this.events.onDone();
       const settings = await studio.getSettings();
       await this.refresh(settings.workspace);
     }

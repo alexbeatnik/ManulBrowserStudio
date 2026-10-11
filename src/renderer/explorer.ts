@@ -11,6 +11,8 @@ export class Explorer {
   /** The folder last clicked, or the one of the file in front. */
   private focus = '';
   private readonly expanded = new Set<string>();
+  /** Counts readings of the folder, so that only the latest is shown. */
+  private turn = 0;
 
   constructor(
     private readonly host: HTMLElement,
@@ -31,7 +33,11 @@ export class Explorer {
 
   /** Opens a folder in the tree, and every folder above it. */
   reveal(dir: string): void {
-    for (let d = dir; d.length > this.root.length; d = dirname(d)) this.expanded.add(d);
+    for (let d = dir; d.length > this.root.length; d = dirname(d)) {
+      this.expanded.add(d);
+      // A folder that is not under the root has no end to climb to.
+      if (dirname(d) === d) break;
+    }
   }
 
   /** Makes a folder the one new files and folders go into. */
@@ -58,10 +64,29 @@ export class Explorer {
     }
   }
 
+  /**
+   * Reads the folder again. The tree is built aside and put in place whole:
+   * reading takes a moment, and two readings that overlapped — a file made
+   * while the folder was still being listed — would each add their rows.
+   */
   async refresh(): Promise<void> {
-    clear(this.host);
-    if (!this.root) return;
-    await this.render(this.root, this.host, 0);
+    const turn = ++this.turn;
+    const built = h('div');
+    if (this.root) await this.render(this.root, built, 0);
+    if (turn !== this.turn) return;
+    this.host.replaceChildren(...built.childNodes);
+    // What was in front, or clicked, while it was being read.
+    this.markTarget();
+    for (const row of this.host.querySelectorAll<HTMLElement>('.row')) {
+      row.classList.toggle('active', row.dataset.path === this.active);
+    }
+  }
+
+  /** Lists a folder that has just been opened in the tree, if it still is. */
+  private async fill(dir: string, into: HTMLElement, depth: number): Promise<void> {
+    const built = h('div');
+    await this.render(dir, built, depth);
+    if (this.expanded.has(dir)) into.replaceChildren(...built.childNodes);
   }
 
   private async render(dir: string, into: HTMLElement, depth: number): Promise<void> {
@@ -115,7 +140,7 @@ export class Explorer {
           } else {
             this.expanded.add(entry.path);
             setOpen(true);
-            void this.render(entry.path, children, depth + 1);
+            void this.fill(entry.path, children, depth + 1);
           }
         };
         row.addEventListener('click', toggle);

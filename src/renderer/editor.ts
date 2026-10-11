@@ -142,6 +142,10 @@ export class EditorView {
     const tab = this.tabs.get(path);
     if (!tab) return;
     if (this.current && this.current !== tab) this.current.viewState = this.editor.saveViewState();
+    // The hint is a mark on the file that was in front, and would stay on it.
+    if (this.current && this.hint.length && !this.current.model.isDisposed()) {
+      this.current.model.deltaDecorations(this.hint, []);
+    }
     this.current = tab;
     this.hint = [];
     this.hintLine = 0;
@@ -171,11 +175,54 @@ export class EditorView {
     this.renderTabs();
   }
 
-  /** Records that the tab's text is what is on disk now. */
-  markSaved(path: string): void {
+  /**
+   * Puts in a tab the text its file has on disk now — after git rewrote it.
+   * Breakpoints stay on the lines they were on; what a run marked is gone
+   * with the text it marked.
+   */
+  replaceText(path: string, text: string): void {
+    const tab = this.tabs.get(path);
+    if (!tab || tab.model.getValue() === text) return;
+    const breakLines = this.breakpoints(path);
+    tab.model.deltaDecorations([...tab.breakpoints, ...tab.marks, ...tab.paused], []);
+    tab.marks = [];
+    tab.paused = [];
+    tab.model.setValue(text);
+    tab.breakpoints = tab.model.deltaDecorations(
+      [],
+      breakLines
+        .filter((line) => line <= tab.model.getLineCount())
+        .map((line) => ({
+          range: new monaco.Range(line, 1, line, 1),
+          options: { glyphMarginClassName: 'bp-glyph', stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges },
+        })),
+    );
+    tab.savedVersion = tab.model.getAlternativeVersionId();
+    this.renderTabs();
+  }
+
+  /** Closes a tab whose file is gone, asking nothing. */
+  drop(path: string): void {
     const tab = this.tabs.get(path);
     if (!tab) return;
     tab.savedVersion = tab.model.getAlternativeVersionId();
+    void this.close(path);
+  }
+
+  /** Which text a tab has, to say later that it was the one written. */
+  version(path: string): number | undefined {
+    return this.tabs.get(path)?.model.getAlternativeVersionId();
+  }
+
+  /**
+   * Records that the tab's text is what is on disk — the text it had at
+   * `version`, when that is given: writing takes a moment, and what was typed
+   * in it is not saved.
+   */
+  markSaved(path: string, version?: number): void {
+    const tab = this.tabs.get(path);
+    if (!tab) return;
+    tab.savedVersion = version ?? tab.model.getAlternativeVersionId();
     this.renderTabs();
   }
 

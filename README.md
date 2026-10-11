@@ -60,10 +60,23 @@ the assertion instead. Ctrl+Enter runs the line under the caret in that browser
 and moves on, so a hunt can be written a step at a time against the real page.
 During a run of a file, the panel shows the screenshots the run records.
 
+**Git.** The Git tab lists the files that have changed since the last commit;
+click one to see it as it was beside as it is. Tick the ones a commit is to
+take, say what it is, and commit; Pull and Push are beside the branch's name,
+which says how many commits are waiting each way. A pull that meets a change
+of your own leaves a merge in progress and the files in conflict at the top of
+the list. Open one and the editor colours the two sides and offers, above
+each conflict, *Accept current*, *Accept incoming* and *Accept both*; or take
+one side of the whole file from the list. When a file is as it should be,
+*resolved* takes it; when none is left, *Finish the merge*. *Give it up* puts
+everything back as it was. A folder that is not a repository can be made one
+there, with a `.gitignore` for what runs leave behind.
+
 **Browsers.** Three, from the toolbar. *Built-in* is a page of the app's own
 Chromium, in the page panel itself: a run of a file happens there, in front of
 the person, and so does the live session — the panel is the browser, not a
-picture of one. The page is laid out at desktop width, 1280 pixels, and drawn
+picture of one. When a run is over the browser is reset, whole, and a picture
+of the page it ended on is what stays in the panel. The page is laid out at desktop width, 1280 pixels, and drawn
 to fit the panel; it can be clicked and typed into, and the address above it
 takes it anywhere. *Chromium* and *Firefox* are the ones installed on the
 machine, which the engine starts in a window of their own, headed or headless.
@@ -110,9 +123,24 @@ the one it is told of. `src/main/cdpBridge.ts` is that address — a server on
 127.0.0.1, on a port of its own choosing, that lists exactly one page and
 passes what it is sent to it. Electron's own debugging port is not opened: it
 would list the app's window as well, with the person's files behind it. A run
-is `manul run <file> --cdp <address>`; before it the page is given what a new
-browser has — no cookies, nothing stored. With this browser a run and the live
-session share the one page.
+is `manul run <file> --cdp <address>`.
+
+A run begins and ends with that browser made new, as one the engine starts
+and closes is: no cookies, nothing stored or cached, nobody signed in — and
+another page, since what a page keeps of its own (its history, its
+`sessionStorage`, the scripts running in it) goes only with the page. So that
+the end of a run can still be looked at, the panel keeps a picture of the page
+it ended on until the browser is next used. The live session, which was of the
+old page, ends with it and starts again when it is next asked for. A site in
+the built-in browser is not given the camera, the microphone or the machine's
+location for the asking, and nothing it offers is downloaded.
+
+**Git** is the `git` on the machine, run as a command and read back
+(`src/main/git.ts`): the app carries none of its own, so credentials and
+settings are the person's. `git status --porcelain=v2` is what the list is
+made from; a commit is `git add` and `git commit` of the ticked files and no
+others; a pull is a merge unless `pull.rebase` says otherwise, and a rebase
+that stops on a conflict is settled and continued the same way.
 
 A run is started in the open folder, exactly as `manul run` would be from a
 terminal there, so it leaves what the CLI leaves: `reports/` with the run
@@ -205,6 +233,11 @@ end-to-end check against the packaged app.
   in it, and there are no downloads. It is drawn above the window, so it is
   taken out of sight while a dialog of the app is open or a splitter is
   dragged. In a narrow panel a page is small; the panel can be made wider.
+- Git is commit, pull, push and conflicts on the branch that is checked out:
+  no branches to make or switch, no history, no stash, no discarding of a
+  change. A change shows in its list once the file is saved. A file changed
+  on disk by another program is not read again by an open tab, except after
+  the app's own pull or merge.
 - Breakpoints changed while a run is in progress take effect on the next run.
 - A run paused inside a block borrowed with `USE` has no line marked: the
   engine's pause names the step, not the block it came from. The results of

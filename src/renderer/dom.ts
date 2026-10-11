@@ -131,12 +131,15 @@ export function resizable(
       const size = Math.min(Math.max(min, max()), Math.max(min, basis + delta));
       root.style.setProperty(variable, `${size}px`);
     };
+    // However the drag ends: let go of, or taken away by the system.
     const up = (): void => {
       splitter.classList.remove('dragging');
       splitter.removeEventListener('pointermove', move);
       splitter.removeEventListener('pointerup', up);
+      splitter.removeEventListener('pointercancel', up);
     };
     splitter.addEventListener('pointermove', move);
     splitter.addEventListener('pointerup', up);
+    splitter.addEventListener('pointercancel', up);
   });
 }

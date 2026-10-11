@@ -106,17 +106,30 @@ export class FrameReader {
 
 export class CdpBridge {
   private server?: http.Server;
+  private starting?: Promise<string>;
   private port = 0;
   private readonly sockets = new Set<Duplex>();
   private unsubscribe?: () => void;
 
   constructor(private readonly page: Debuggee) {}
 
-  /** Starts listening, on this machine only; resolves to the address to hand the engine. */
-  async start(): Promise<string> {
-    if (this.server) return this.endpoint;
+  /**
+   * Starts listening, on this machine only; resolves to the address to hand
+   * the engine. Asked twice at once — a run and the live session beginning
+   * together — it is still one server: a second would take the port the
+   * first one's callers had been told.
+   */
+  start(): Promise<string> {
+    this.starting ??= this.listen().catch((err: unknown) => {
+      this.starting = undefined;
+      throw err;
+    });
+    return this.starting;
+  }
+
+  private async listen(): Promise<string> {
     const server = http.createServer((req, res) => this.answer(req, res));
-    server.on('upgrade', (req, socket) => this.upgrade(req, socket));
+    server.on('upgrade', (req, socket, head) => this.upgrade(req, socket, head));
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', resolve);
@@ -134,12 +147,21 @@ export class CdpBridge {
     return `http://127.0.0.1:${this.port}`;
   }
 
-  stop(): void {
-    this.unsubscribe?.();
+  /**
+   * Hangs up on everyone connected, and goes on listening: the page they
+   * were driving is gone, and the next to connect is given the new one.
+   */
+  disconnect(): void {
     for (const socket of this.sockets) socket.destroy();
     this.sockets.clear();
+  }
+
+  stop(): void {
+    this.unsubscribe?.();
+    this.disconnect();
     this.server?.close();
     this.server = undefined;
+    this.starting = undefined;
   }
 
   /**
@@ -180,7 +202,7 @@ export class CdpBridge {
     }
   }
 
-  private upgrade(req: http.IncomingMessage, socket: Duplex): void {
+  private upgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     const key = req.headers['sec-websocket-key'];
     if (!this.trusted(req) || !key || req.url !== `/devtools/page/${TARGET}`) {
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
@@ -203,6 +225,8 @@ export class CdpBridge {
         if (opcode === 0x8) socket.end(encodeFrame('', 0x8));
       },
     );
+    // A client that does not wait for the handshake has its first frame here.
+    if (head.length) reader.push(head);
     socket.on('data', (chunk: Buffer) => reader.push(chunk));
     const gone = (): void => void this.sockets.delete(socket);
     socket.on('close', gone);

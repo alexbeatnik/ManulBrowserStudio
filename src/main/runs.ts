@@ -16,6 +16,7 @@ import { EngineService } from './engineService';
 
 export class RunService {
   private run?: HuntRun;
+  private starting = false;
 
   constructor(
     private readonly engines: EngineService,
@@ -24,6 +25,12 @@ export class RunService {
     /** The launcher for the app's own Node; see hookRuntime.ts. */
     private readonly builtInNode: () => string,
     private readonly builtIn: BuiltInBrowser,
+    /**
+     * Makes the built-in browser new — nothing kept, a page that has been
+     * nowhere — and resolves, when asked for one, to a picture of the page as
+     * it was just before.
+     */
+    private readonly renewBuiltIn: (picture: boolean) => Promise<string>,
   ) {}
 
   get active(): boolean {
@@ -31,7 +38,19 @@ export class RunService {
   }
 
   async start(request: RunRequest): Promise<void> {
-    if (this.run) throw new Error('A run is already in progress.');
+    // Getting a run under way takes a moment — the engine is looked for, the
+    // built-in browser made new — and a second asked for in that moment
+    // would otherwise be started beside the first.
+    if (this.run || this.starting) throw new Error('A run is already in progress.');
+    this.starting = true;
+    try {
+      await this.begin(request);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  private async begin(request: RunRequest): Promise<void> {
     const engine = await this.engines.require();
     const settings = this.settings();
     const cwd = settings.workspace || path.dirname(request.file);
@@ -57,7 +76,7 @@ export class RunService {
     // The built-in browser is not started by the engine but attached to: a
     // page that is there already, made as empty as a new browser would be.
     const builtIn = settings.browser === 'builtin';
-    if (builtIn) await this.builtIn.reset();
+    if (builtIn) await this.renewBuiltIn(false);
     const { args, dropped } = buildArgs(
       request.file,
       {
@@ -105,8 +124,16 @@ export class RunService {
     run.on('result', (result) => this.emit({ kind: 'result', result }));
     run.on('log', (text) => this.emit({ kind: 'log', text: stripAnsi(text) }));
     run.on('exit', ({ code, error }) => {
-      if (this.run === run) this.run = undefined;
-      this.emit({ kind: 'exit', code, error: error?.message });
+      // A browser the engine started is closed by the engine. The built-in
+      // one is not the engine's to close, so it is made new here: what the
+      // hunt signed in to, stored or left open ends with the hunt. The run is
+      // not over until that is done — the next must not begin in the middle.
+      const over = (still?: string): void => {
+        if (this.run === run) this.run = undefined;
+        this.emit({ kind: 'exit', code, error: error?.message, still });
+      };
+      if (!builtIn) return over();
+      this.renewBuiltIn(true).then(over, () => over(''));
     });
 
     this.emit({ kind: 'started', file: request.file, commandLine: run.commandLine, dropped, hooks: hooks ?? '' });

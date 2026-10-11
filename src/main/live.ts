@@ -45,6 +45,9 @@ export class LiveService {
 
   open(): Promise<LiveSnapshot> {
     return this.serial(async () => {
+      // An engine that has gone since — its browser was closed by hand — is
+      // not a session to come back to; asked to open, a new one is opened.
+      if (this.session?.closed) this.session = undefined;
       if (!this.session) {
         const engine = await this.engines.require();
         const settings = this.settings();

@@ -12,6 +12,9 @@ import { parseHunt, StepLocator } from '../src/core/huntDoc';
 import { PAUSE_MARKER, VARS_MARKER, parseStdoutLine } from '../src/core/runner';
 import { DEMO_FIRST_HUNT, DEMO_FOLDER, openDemo, placeDemo, SITE_TOKEN } from '../src/main/demo';
 import { builtInNode, plainForCmd } from '../src/main/hookRuntime';
+import { sanitise, SettingsStore } from '../src/main/settings';
+import { toAddress } from '../src/shared/address';
+import { DEFAULT_SETTINGS } from '../src/shared/api';
 import { isInside, Workspace } from '../src/main/workspace';
 import { isPackageName, parsePackageSpecs } from '../src/shared/packages';
 import { quote, runnableLine, stepForElement, verifyForElement } from '../src/shared/steps';
@@ -96,9 +99,11 @@ test('a label with an apostrophe is written in double quotes', () => {
 test('only a line that is a step is run on its own', () => {
   assert.equal(runnableLine("    CLICK the 'Pay' button"), "CLICK the 'Pay' button");
   assert.equal(runnableLine("  3. FILL 'Email' field with 'a@b.c'"), "FILL 'Email' field with 'a@b.c'");
-  for (const line of ['', '   ', '# a note', '@title: checkout', 'STEP 2: Pay', 'DONE.', '[SETUP]', '[END TEARDOWN]', "IF button 'Pay' exists:", 'ELSE:']) {
+  for (const line of ['', '   ', '# a note', '@title: checkout', 'STEP 2: Pay', 'DONE.', '[SETUP]', '[END TEARDOWN]', "IF button 'Pay' exists:", 'ELSE:', '    END IF', 'END FOR', '    USE Open the shop']) {
     assert.equal(runnableLine(line), '', line);
   }
+  // A step that merely begins like the end of a block is still a step.
+  assert.equal(runnableLine("CLICK the 'END' button"), "CLICK the 'END' button");
 });
 
 // ── the open folder ─────────────────────────────────────────────────────────
@@ -110,6 +115,9 @@ test('a path is inside the folder only if it really is', () => {
   assert.equal(isInside(root, root), true);
   assert.equal(isInside(root, path.join(root, '..', 'elsewhere.hunt')), false);
   assert.equal(isInside(root, `${root}-sibling${path.sep}a.hunt`), false);
+  assert.equal(isInside(root, path.dirname(root)), false);
+  // A name that begins with two dots is a name, not the folder above.
+  assert.equal(isInside(root, path.join(root, '..notes', 'a.hunt')), true);
   assert.equal(isInside('', path.join(root, 'a.hunt')), false);
 });
 
@@ -250,6 +258,42 @@ test('a hook script in a folder with a space in its name is started by the launc
       ? spawnSync('cmd.exe', ['/c', launcher, script], { encoding: 'utf8' })
       : spawnSync(launcher, [script], { encoding: 'utf8' });
   assert.equal(run.stdout, `started from ${script}`, run.stderr);
+});
+
+// ── settings, and the address bar ───────────────────────────────────────────
+
+test('settings keep what this version knows, and drop the rest', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'studio-settings-')), 'settings.json');
+  // Edited by hand, and left by a version that kept another thing in it.
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ workspace: 42, browser: 'netscape', headless: true, screenshots: 'always', demoOffered: true }),
+  );
+  const store = new SettingsStore(file);
+  assert.deepEqual(store.get(), { ...DEFAULT_SETTINGS, headless: true, screenshots: 'always' });
+
+  // What the window sends is held to the same.
+  store.update({ browser: 'firefox', screenshots: 'sometimes' } as never);
+  assert.equal(store.get().browser, 'firefox');
+  assert.equal(store.get().screenshots, 'always');
+  assert.ok(!('demoOffered' in JSON.parse(fs.readFileSync(file, 'utf8'))));
+
+  assert.deepEqual(sanitise('not an object'), {});
+});
+
+test('what is typed above the page becomes an address', () => {
+  assert.equal(toAddress('  example.com/shop  '), 'https://example.com/shop');
+  assert.equal(toAddress('https://example.com'), 'https://example.com');
+  assert.equal(toAddress('about:blank'), 'about:blank');
+  // A host and a port, not a scheme called localhost.
+  assert.equal(toAddress('localhost:3000'), 'http://localhost:3000');
+  assert.equal(toAddress('127.0.0.1:8080/app'), 'http://127.0.0.1:8080/app');
+  assert.equal(toAddress('[::1]:3000'), 'http://[::1]:3000');
+  assert.equal(toAddress('shop.localhost'), 'http://shop.localhost');
+  // A path on disk, spaces and all.
+  assert.equal(toAddress('C:\\My Site\\index.html'), 'file:///C:/My%20Site/index.html');
+  assert.equal(toAddress('/home/me/site/index.html'), 'file:///home/me/site/index.html');
+  assert.equal(toAddress('   '), '');
 });
 
 // ── the demo project ────────────────────────────────────────────────────────

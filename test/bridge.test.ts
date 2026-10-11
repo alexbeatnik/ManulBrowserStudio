@@ -106,6 +106,19 @@ test('the endpoint lists one page, and a web page may not ask', async () => {
   }
 });
 
+test('asked for twice at once, the endpoint is one server', async () => {
+  const bridge = new CdpBridge(fakePage());
+  try {
+    // A run and the live session beginning together.
+    const [first, second] = await Promise.all([bridge.start(), bridge.start()]);
+    assert.equal(first, second);
+    assert.equal((await get(`${first}/json/list`)).status, 200);
+    assert.equal(await bridge.start(), first);
+  } finally {
+    bridge.stop();
+  }
+});
+
 test('a command goes to the page and its answer comes back; what the page reports is passed on', async () => {
   const page = fakePage();
   const bridge = new CdpBridge(page);

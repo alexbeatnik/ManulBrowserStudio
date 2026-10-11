@@ -14,7 +14,9 @@ const HIDDEN = new Set(['.git', 'node_modules', '__pycache__', '.venv', 'venv'])
 export function isInside(root: string, target: string): boolean {
   if (!root) return false;
   const rel = path.relative(path.resolve(root), path.resolve(target));
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  // `..` and what is under it, and not a name that only begins like it: `..notes`.
+  const above = rel === '..' || rel.startsWith(`..${path.sep}`);
+  return rel === '' || (!above && !path.isAbsolute(rel));
 }
 
 export class Workspace {

@@ -56,6 +56,7 @@
           <button data-tab="files" class="active">Files</button>
           <button data-tab="steps">Steps</button>
           <button data-tab="libraries">Libraries</button>
+          <button data-tab="git" id="git-tab">Git</button>
         </nav>
         <section id="files" class="pane active">
           <div class="pane-actions">
@@ -81,6 +82,21 @@
           </p>
           <div id="lib-list"></div>
         </section>
+        <section id="git" class="pane">
+          <div class="pane-actions">
+            <span id="git-branch" class="dim"></span>
+            <span class="spacer"></span>
+            <button id="git-pull" class="quiet" disabled>Pull</button>
+            <button id="git-push" class="quiet" title="Send this branch's commits to its remote" disabled>Push</button>
+            <button id="git-refresh" class="quiet" title="Ask git again">&#8635;</button>
+          </div>
+          <div id="git-operation" class="hidden"></div>
+          <div id="git-list"></div>
+          <form id="git-commit" class="hidden">
+            <textarea id="git-message" rows="3" placeholder="What this commit is (Ctrl+Enter commits)" spellcheck="false"></textarea>
+            <button id="git-commit-button" type="submit" class="primary" title="Commit the ticked files, as they are on disk" disabled>Commit</button>
+          </form>
+        </section>
       </aside>
 
       <div class="splitter" data-resize="sidebar"></div>
@@ -102,6 +118,16 @@
             </p>
           </div>
           <div id="editor"></div>
+          <div id="diff" class="hidden">
+            <div class="pane-actions">
+              <strong id="diff-title"></strong>
+              <span id="diff-note" class="dim"></span>
+              <span class="spacer"></span>
+              <button id="diff-open" class="quiet" type="button" title="Open the file to change it">Open file</button>
+              <button id="diff-close" class="quiet" type="button" title="Close (Esc)">Close</button>
+            </div>
+            <div id="diff-editor"></div>
+          </div>
         </div>
         <div class="splitter horizontal" data-resize="bottom"></div>
         <section id="bottom">

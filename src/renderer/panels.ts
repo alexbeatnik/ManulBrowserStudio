@@ -32,7 +32,8 @@ export class Panels {
 
   constructor(
     private readonly show: (pane: string) => void,
-    private readonly reveal: (line: number) => void,
+    /** Shows a 0-based line: of `file`, or of the file the run is of. */
+    private readonly reveal: (line: number, file?: string) => void,
   ) {
     this.reset();
   }
@@ -106,8 +107,8 @@ export class Panels {
     this.append(row);
   }
 
-  /** A step run on its own in the live session. */
-  addLive(outcome: LiveStepOutcome, line: number | undefined): void {
+  /** A step run on its own in the live session, from a line of `file`. */
+  addLive(outcome: LiveStepOutcome, line: number | undefined, file: string): void {
     if (this.block !== 'Live session') {
       this.block = 'Live session';
       this.append(h('div', { class: 'result block', text: this.block }));
@@ -127,20 +128,21 @@ export class Panels {
         row.append(h('div', { class: 'near', text: `closest on the page: ${list}` }));
       }
     }
-    if (line !== undefined) this.makeRevealable(row, line, outcome.step);
+    // The file it was run from, which is not the file of the last run.
+    if (line !== undefined) this.makeRevealable(row, line, outcome.step, file);
     this.append(row);
     this.show('results');
   }
 
-  private makeRevealable(row: HTMLElement, line: number, step: string): void {
+  private makeRevealable(row: HTMLElement, line: number, step: string, file?: string): void {
     row.tabIndex = 0;
     row.setAttribute('role', 'button');
     row.setAttribute('aria-label', `Go to line ${line + 1}: ${step}`);
-    row.addEventListener('click', () => this.reveal(line));
+    row.addEventListener('click', () => this.reveal(line, file));
     row.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       event.preventDefault();
-      this.reveal(line);
+      this.reveal(line, file);
     });
   }
 

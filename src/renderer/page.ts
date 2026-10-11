@@ -12,7 +12,8 @@
 
 import type { LiveSnapshot, MapElement } from '../shared/api';
 import { CLOSED_SNAPSHOT } from '../shared/api';
-import { $, clear, h, studio } from './dom';
+import { toAddress } from '../shared/address';
+import { $, clear, h, reason, studio } from './dom';
 
 export interface PageEvents {
   /** An element was picked: write the step that acts on it. */
@@ -21,8 +22,8 @@ export interface PageEvents {
   onVerify(element: MapElement): void;
   onStatus(text: string): void;
   onVariables(vars: Record<string, string>): void;
-  /** Something went wrong that the author should read. */
-  onError(message: string): void;
+  /** Something went wrong that the author should read; `whose` names what it went wrong in. */
+  onError(whose: string, message: string): void;
 }
 
 export class PagePanel {
@@ -53,9 +54,8 @@ export class PagePanel {
     });
     this.address.addEventListener('submit', (e) => {
       e.preventDefault();
-      const typed = this.url.value.trim();
-      if (!typed) return;
-      const target = /^[a-z][a-z0-9+.-]*:/i.test(typed) ? typed : `https://${typed}`;
+      const target = toAddress(this.url.value);
+      if (!target) return;
       if (this.builtIn) void this.visit(target);
       else void this.step(`NAVIGATE to ${target}`);
     });
@@ -72,14 +72,15 @@ export class PagePanel {
       if (!(e.target as HTMLElement).closest?.('.splitter')) return;
       this.dragging = true;
       this.place();
-      document.addEventListener(
-        'pointerup',
-        () => {
-          this.dragging = false;
-          this.place();
-        },
-        { once: true },
-      );
+      // However the drag ends: let go of, or taken away by the system.
+      const done = (): void => {
+        document.removeEventListener('pointerup', done);
+        document.removeEventListener('pointercancel', done);
+        this.dragging = false;
+        this.place();
+      };
+      document.addEventListener('pointerup', done);
+      document.addEventListener('pointercancel', done);
     });
     studio.onPageState((state) => {
       if (this.builtIn && document.activeElement !== this.url) this.url.value = state.url;
@@ -89,24 +90,57 @@ export class PagePanel {
 
   /** Whether the page is the built-in browser's, and so in the panel itself. */
   setBuiltIn(on: boolean): void {
+    this.toPage();
     this.builtIn = on;
     this.shotHost.classList.toggle('built-in', on);
     this.render();
     this.place();
   }
 
+  /**
+   * The built-in browser has been made new, as it is before a run and after
+   * one: the page the live session was of is gone, and the session with it.
+   * `still` is a picture of that page to leave in sight — where a run ended —
+   * until the browser is next used; without one the new page is shown.
+   */
+  renewed(still = ''): void {
+    if (!this.builtIn) return;
+    this.snapshot = CLOSED_SNAPSHOT;
+    this.url.value = '';
+    this.toPage();
+    if (still) {
+      this.still = true;
+      this.shot.src = still;
+      this.shotHost.classList.add('still');
+    }
+    this.render();
+    this.place();
+  }
+
+  /** Puts the page itself back in the panel, in place of a picture of the last one. */
+  private toPage(): void {
+    if (!this.still) return;
+    this.still = false;
+    this.shotHost.classList.remove('still');
+    this.shot.removeAttribute('src');
+    this.place();
+  }
+
   private dragging = false;
+  /** A picture of the page a run ended on is in the panel, not the page. */
+  private still = false;
 
   private place(): void {
     const box = this.browserHost.getBoundingClientRect();
-    const covered = this.dragging || !$('dialog-backdrop').classList.contains('hidden');
+    const covered = this.still || this.dragging || !$('dialog-backdrop').classList.contains('hidden');
     const shown = this.builtIn && !covered && box.width > 0 && box.height > 0;
     void studio.pagePlace(shown ? { x: box.x, y: box.y, width: box.width, height: box.height } : null);
   }
 
   /** Sends the built-in browser to an address; the map follows if there is one. */
   private async visit(target: string): Promise<void> {
-    await this.working(`Opening ${target}`, () => studio.pageNavigate(target));
+    this.toPage();
+    await this.working(`Opening ${target}`, () => studio.pageNavigate(target), 'Built-in browser');
     if (this.snapshot.open) await this.refresh();
   }
 
@@ -115,7 +149,7 @@ export class PagePanel {
   }
 
   /** Runs `work` with the panel marked busy, and reports what it throws. */
-  private async working<T>(what: string, work: () => Promise<T>): Promise<T | undefined> {
+  private async working<T>(what: string, work: () => Promise<T>, whose = 'Live session'): Promise<T | undefined> {
     this.busy++;
     this.shotHost.classList.add('busy');
     this.toggle.disabled = true;
@@ -123,7 +157,7 @@ export class PagePanel {
     try {
       return await work();
     } catch (err) {
-      this.events.onError((err as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+      this.events.onError(whose, reason(err));
       return undefined;
     } finally {
       if (--this.busy === 0) {
@@ -135,6 +169,7 @@ export class PagePanel {
   }
 
   async open(): Promise<boolean> {
+    this.toPage();
     const snapshot = await this.working('Starting the live session…', () => studio.liveOpen());
     if (snapshot) this.apply(snapshot);
     return this.snapshot.open;
@@ -199,7 +234,12 @@ export class PagePanel {
     this.zoom.classList.toggle('hidden', this.builtIn);
     this.address.classList.toggle('hidden', !open && !this.builtIn);
     this.filter.disabled = !open;
-    if (this.builtIn) this.source.textContent = open ? 'live · built-in' : 'built-in';
+    if (this.builtIn) {
+      this.source.textContent = this.still ? 'built-in · where the run ended' : open ? 'live · built-in' : 'built-in';
+      this.source.title = this.still
+        ? 'A picture of the page the run ended on. The browser itself has been reset: nothing of the run is left in it.'
+        : '';
+    }
     else if (!open && !this.shot.getAttribute('src')) this.source.textContent = '';
     this.renderMap();
   }

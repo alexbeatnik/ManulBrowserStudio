@@ -45,6 +45,18 @@ const api: StudioApi = {
   liveClose: call('liveClose'),
   liveRefresh: call('liveRefresh'),
   liveStep: call('liveStep'),
+  gitStatus: call('gitStatus'),
+  gitInit: call('gitInit'),
+  gitDiff: call('gitDiff'),
+  gitCommit: call('gitCommit'),
+  gitPull: call('gitPull'),
+  gitPush: call('gitPush'),
+  gitResolve: call('gitResolve'),
+  gitContinue: call('gitContinue'),
+  gitAbort: call('gitAbort'),
+  onGitLog: (listener) => {
+    ipcRenderer.on('studio:gitLog', (_e, line: string) => listener(line));
+  },
   pagePlace: call('pagePlace'),
   pageNavigate: call('pageNavigate'),
   onPageState: (listener) => {

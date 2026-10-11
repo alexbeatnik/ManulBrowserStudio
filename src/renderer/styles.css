@@ -884,3 +884,223 @@ table.kv td:last-child {
   font-size: 12px;
   word-break: break-all;
 }
+
+/* ── git ──────────────────────────────────────────────────────────────────── */
+
+#git.active {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#git-branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+#git-branch + .spacer {
+  display: none;
+}
+#git-operation {
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: rgba(240, 174, 90, 0.08);
+}
+#git-operation p {
+  margin: 0 0 8px;
+}
+#git-operation .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#git-list {
+  flex: 1;
+  min-height: 40px;
+  overflow: auto;
+  padding: 0 8px;
+}
+#git-list h3 {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.git-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 3px;
+}
+.git-file:hover {
+  background: var(--bg-hover);
+}
+.git-file .show {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.git-file .show:hover {
+  background: transparent;
+}
+.git-file .state {
+  flex: none;
+  width: 12px;
+  font: 600 12px var(--mono);
+  text-align: center;
+  color: var(--warn);
+}
+.git-file.added .state,
+.git-file.untracked .state {
+  color: var(--pass);
+}
+.git-file.deleted .state,
+.git-file.conflict .state {
+  color: var(--fail);
+}
+.git-file.deleted .name {
+  text-decoration: line-through;
+}
+.git-file .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-file .dir {
+  margin-left: 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.git-file .settle {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.git-file .settle button {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+#git-commit {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+#git-commit.hidden {
+  display: none;
+}
+#git-message {
+  resize: vertical;
+  min-height: 54px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
+}
+#git-message:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* What changed in a file, over the editor. */
+#diff {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+#diff.hidden {
+  display: none;
+}
+#diff .pane-actions {
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-raised);
+}
+#diff-title {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+#diff-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#diff-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+/* A conflict in a file: what was here, and what is coming in. */
+.conflict-current {
+  background: rgba(108, 192, 112, 0.14);
+}
+.conflict-incoming {
+  background: rgba(106, 169, 233, 0.16);
+}
+.conflict-base {
+  background: rgba(163, 173, 186, 0.1);
+}
+.conflict-marker {
+  background: rgba(163, 173, 186, 0.2);
+}
+.conflict-marker.current {
+  background: rgba(108, 192, 112, 0.3);
+}
+.conflict-marker.incoming {
+  background: rgba(106, 169, 233, 0.32);
+}
+/* The branch has a line to itself: its name, and how far it is from its
+   upstream, are not to be cut short by the buttons. */
+#git > .pane-actions {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+#git-branch {
+  flex-basis: 100%;
+}
+/* A file in conflict: its name, and under it what can be done about it. */
+.git-file.conflict {
+  flex-wrap: wrap;
+  padding-bottom: 4px;
+}
+.git-file.conflict .show {
+  flex-basis: 100%;
+}
+.git-file.conflict .settle {
+  padding-left: 24px;
+}
+/* After a run in the built-in browser: a picture of the page it ended on,
+   where the page was. The browser itself is new, and out of sight until it
+   is next used. */
+#shot-host.built-in.still {
+  overflow: auto;
+}
+#shot-host.built-in.still #shot {
+  display: block;
+}
+#shot-host.built-in.still #browser-host {
+  pointer-events: none;
+}

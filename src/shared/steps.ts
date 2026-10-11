@@ -59,7 +59,16 @@ export function runnableLine(raw: string): string {
   if (!text || text.startsWith('#') || text.startsWith('@')) return '';
   if (/^STEP\b\s*\d*\s*:/i.test(text) || /^DONE\b\.?$/i.test(text)) return '';
   if (/^\[(END\s+)?(SETUP|TEARDOWN)\]$/i.test(text)) return '';
-  // The opener of a block is not a step without its body.
+  // The opener of a block is not a step without its body, nor is its end.
   if (/^(IF|ELIF|ELSE|REPEAT|FOR\s+EACH|WHILE)\b.*:\s*$/i.test(text)) return '';
+  if (/^END\s*(IF|REPEAT|WHILE|FOR|EACH)\b/i.test(text)) return '';
+  // A borrowed block is known to the hunt that imports it, and to nothing
+  // that is handed one line of that hunt.
+  if (borrowedBlock(text)) return '';
   return text;
+}
+
+/** The name of the block a `USE` line borrows; '' for any other line. */
+export function borrowedBlock(raw: string): string {
+  return raw.trim().match(/^USE\s+(.+)$/i)?.[1].trim() ?? '';
 }

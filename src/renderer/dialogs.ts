@@ -6,25 +6,39 @@ import { $, clear, h } from './dom';
 const backdrop = (): HTMLElement => $('dialog-backdrop');
 const box = (): HTMLElement => $('dialog');
 
+/** The dialog that was asked for last, answered or not. */
+let last: Promise<unknown> = Promise.resolve();
+
+/**
+ * There is one box, so one dialog at a time: a second asked for while the
+ * first is unanswered — two things failing together — waits its turn. Drawn
+ * over the first, it would leave the first with no way to be answered, and
+ * whoever asked it waiting for good.
+ */
 function show<T>(build: (close: (value: T) => void) => { cancel: T; focus?: HTMLElement }): Promise<T> {
-  return new Promise((resolve) => {
-    const close = (value: T): void => {
-      backdrop().classList.add('hidden');
-      document.removeEventListener('keydown', onKey, true);
-      resolve(value);
-    };
-    clear(box());
-    const { cancel, focus } = build(close);
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        close(cancel);
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    backdrop().classList.remove('hidden');
-    (focus ?? box().querySelector<HTMLElement>('button.primary'))?.focus();
-  });
+  const shown = last.then(
+    () =>
+      new Promise<T>((resolve) => {
+        const close = (value: T): void => {
+          backdrop().classList.add('hidden');
+          document.removeEventListener('keydown', onKey, true);
+          resolve(value);
+        };
+        clear(box());
+        const { cancel, focus } = build(close);
+        const onKey = (e: KeyboardEvent): void => {
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            close(cancel);
+          }
+        };
+        document.addEventListener('keydown', onKey, true);
+        backdrop().classList.remove('hidden');
+        (focus ?? box().querySelector<HTMLElement>('button.primary'))?.focus();
+      }),
+  );
+  last = shown.catch(() => undefined);
+  return shown;
 }
 
 /** Asks for one line of text. Resolves to '' when dismissed. */
