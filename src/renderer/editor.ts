@@ -1,14 +1,20 @@
 // The editor: one Monaco instance, a tab per open file, and the marks a run
 // leaves on the lines it touched.
 //
+// An HTML or Markdown file can be looked at as what it makes instead: each
+// tab remembers which way it is looked at, and the preview stands over the
+// editor while it is the way.
+//
 // Marks are decorations on the file's model rather than on the editor, so they
 // stay with their file when another tab is in front, and move with their line
 // when text is typed above it.
 
 import * as monaco from 'monaco-editor';
+import { PreviewKind, previewKind } from '../shared/preview';
 import { basename, clear, h } from './dom';
 import { HUNT, THEME } from './hunt';
 import { iconFor } from './icons';
+import { PreviewView } from './preview';
 
 // Monaco starts a worker per language service and asks where its script is.
 (self as unknown as { MonacoEnvironment: monaco.Environment }).MonacoEnvironment = {
@@ -30,6 +36,10 @@ interface Tab {
   breakpoints: string[];
   marks: string[];
   paused: string[];
+  /** What the file can be shown as besides its text, if anything. */
+  kind?: PreviewKind;
+  /** Shown as what it makes, rather than as its text. */
+  previewing: boolean;
 }
 
 export interface EditorEvents {
@@ -51,6 +61,7 @@ export class EditorView {
     host: HTMLElement,
     private readonly strip: HTMLElement,
     private readonly events: EditorEvents,
+    private readonly preview: PreviewView,
   ) {
     this.editor = monaco.editor.create(host, {
       model: null,
@@ -124,6 +135,7 @@ export class EditorView {
       const uri = monaco.Uri.file(path);
       const language = path.toLowerCase().endsWith('.hunt') ? HUNT : undefined;
       const model = monaco.editor.getModel(uri) ?? monaco.editor.createModel(text, language, uri);
+      const kind = previewKind(path);
       tab = {
         path,
         model,
@@ -132,6 +144,9 @@ export class EditorView {
         breakpoints: [],
         marks: [],
         paused: [],
+        kind,
+        // Markdown is mostly read; HTML is mostly written.
+        previewing: kind === 'markdown',
       };
       this.tabs.set(path, tab);
     }
@@ -151,9 +166,46 @@ export class EditorView {
     this.hintLine = 0;
     this.editor.setModel(tab.model);
     if (tab.viewState) this.editor.restoreViewState(tab.viewState);
-    this.editor.focus();
+    this.showMode();
     this.renderTabs();
     this.events.onActivate(path);
+  }
+
+  // ── code or preview ───────────────────────────────────────────────────────
+
+  /** Whether the front tab is shown as what it makes. */
+  get previewing(): boolean {
+    return !!this.current?.previewing;
+  }
+
+  /** Shows the front tab as text, or as what it makes; the other of the two when not said. */
+  setPreview(on?: boolean): void {
+    const tab = this.current;
+    if (!tab?.kind) return;
+    const wanted = on ?? !tab.previewing;
+    if (wanted === tab.previewing) return;
+    tab.previewing = wanted;
+    this.showMode();
+    this.renderTabs();
+  }
+
+  /** Puts the preview over the editor, or takes it away, for the front tab. */
+  private showMode(): void {
+    const tab = this.current;
+    if (tab?.kind && tab.previewing) {
+      void this.preview.show(tab.path, tab.kind, tab.model.getValue(), this.drafts());
+      this.preview.focus();
+    } else {
+      if (this.preview.visible) this.preview.hide();
+      if (tab) this.editor.focus();
+    }
+  }
+
+  /** The text of every open file with unsaved changes. */
+  private drafts(): Record<string, string> {
+    const drafts: Record<string, string> = {};
+    for (const path of this.dirtyPaths()) drafts[path] = this.text(path);
+    return drafts;
   }
 
   async close(path: string): Promise<void> {
@@ -170,6 +222,7 @@ export class EditorView {
         return;
       }
       this.editor.setModel(null);
+      this.preview.hide();
       this.events.onActivate(undefined);
     }
     this.renderTabs();
@@ -198,6 +251,7 @@ export class EditorView {
         })),
     );
     tab.savedVersion = tab.model.getAlternativeVersionId();
+    if (tab === this.current && tab.previewing) this.showMode();
     this.renderTabs();
   }
 
@@ -253,6 +307,27 @@ export class EditorView {
         if (e.button === 1) void this.close(tab.path);
       });
       this.strip.append(el);
+    }
+    // The front tab, when it can be shown as what it makes, says which way it is.
+    const tab = this.current;
+    if (tab?.kind) {
+      const choice = (label: string, previewing: boolean, title: string): HTMLElement =>
+        h('button', {
+          class: `quiet${tab.previewing === previewing ? ' active' : ''}`,
+          type: 'button',
+          title,
+          'aria-pressed': String(tab.previewing === previewing),
+          text: label,
+          onclick: () => this.setPreview(previewing),
+        });
+      this.strip.append(
+        h(
+          'div',
+          { class: 'view-mode', role: 'group', 'aria-label': 'Show the file as' },
+          choice('Code', false, 'Show the text (Ctrl+Shift+V)'),
+          choice('Preview', true, tab.kind === 'html' ? 'Show the page (Ctrl+Shift+V)' : 'Show it formatted (Ctrl+Shift+V)'),
+        ),
+      );
     }
   }
 

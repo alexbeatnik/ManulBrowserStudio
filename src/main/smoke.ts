@@ -107,6 +107,7 @@ interface Snapshot {
   libraries: string[];
   huntIcons: number;
   tabIcons: number;
+  previewing: boolean;
   log: string;
   hasShot: boolean;
   still: boolean;
@@ -169,6 +170,53 @@ export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltIn
       fs.readFileSync(s.active, 'utf8').includes(`NAVIGATE to ${pathToFileURL(path.join(demo, 'site')).href}/index.html`),
     );
     await shoot('0-demo');
+
+    // ── HTML and Markdown, as text and as what they make ───────────────────
+    const readme = path.join(demo, 'README.md');
+    await js(`window.__studio.openFile(${JSON.stringify(readme)})`);
+    s = await until('the README to open', (x) => x.active === readme, 10_000);
+    check('a Markdown file opens formatted', s.previewing);
+    const headings = await js<number>("document.querySelectorAll('#preview .markdown-body h1, #preview .markdown-body h2').length");
+    check('the Markdown is drawn as headings and text', headings > 0, `${headings} headings`);
+    await shoot('0-markdown');
+    await command('toggle-preview');
+    s = await until('the README to show its text', (x) => !x.previewing, 5_000);
+    check('a Markdown file can be shown as its text', !s.previewing);
+
+    const shopPage = path.join(demo, 'site', 'index.html');
+    await js(`window.__studio.openFile(${JSON.stringify(shopPage)})`);
+    s = await until('the shop page to open', (x) => x.active === shopPage, 10_000);
+    check('an HTML file opens as its text', !s.previewing);
+    // The same command twice within a moment is taken for one key press
+    // arriving twice (App.command), and the second is dropped.
+    await new Promise((r) => setTimeout(r, 300));
+    await command('toggle-preview');
+    s = await until('the shop page to be previewed', (x) => x.previewing, 5_000);
+    // The page is a frame served from the folder: its stylesheet and script
+    // come with it, and the script draws the shop.
+    const drawn = await (async (): Promise<string> => {
+      const deadline = Date.now() + 10_000;
+      let last = 'no frame';
+      while (Date.now() < deadline) {
+        const frame = win.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith('manul-preview:'));
+        if (frame) {
+          last = String(
+            await frame.executeJavaScript(
+              "`${document.styleSheets.length && document.styleSheets[0].cssRules.length ? 'styled' : 'plain'} ${document.querySelectorAll('#view *').length}`",
+            ).catch((err: unknown) => err),
+          );
+          if (/^styled [1-9]/.test(last)) return last;
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      return last;
+    })();
+    check('an HTML preview runs the page with its stylesheet and script', /^styled [1-9]/.test(drawn), drawn);
+    await shoot('0-html-preview');
+    await new Promise((r) => setTimeout(r, 300));
+    await command('toggle-preview');
+    s = await until('the shop page to show its text again', (x) => !x.previewing, 5_000);
+    await js(`window.__studio.openFile(${JSON.stringify(demoHunt('01-first-order.hunt'))})`);
     // What each hunt of the demo comes to: 02 is the one with a step to fix.
     const expected: Array<[string, number, number]> = [
       ['01-first-order.hunt', 20, 0],

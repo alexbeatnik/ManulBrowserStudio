@@ -16,6 +16,7 @@ import {
   RunRequest,
   Settings,
 } from '../shared/api';
+import { PREVIEW_SCHEME } from '../shared/preview';
 import { BuiltInBrowser } from './builtInBrowser';
 import { hookTemplate, HOOK_BASENAMES } from '../core/hooks';
 import { openDemo } from './demo';
@@ -24,6 +25,7 @@ import { GitService } from './git';
 import { builtInNode } from './hookRuntime';
 import { LiveService } from './live';
 import { PackageService } from './packages';
+import { PreviewServer, registerPreviewScheme } from './preview';
 import { RunService } from './runs';
 import { SettingsStore } from './settings';
 import { runSmoke } from './smoke';
@@ -88,6 +90,8 @@ function buildMenu(): Menu {
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+        { type: 'separator' },
+        { label: 'Toggle Preview', accelerator: 'CmdOrCtrl+Shift+V', click: menu('toggle-preview') },
       ],
     },
   ];
@@ -118,6 +122,13 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event) => event.preventDefault());
+  // The preview of an HTML file is a frame of the window, and keeps to the
+  // open folder: a link out of it goes to the system browser instead.
+  win.webContents.on('will-frame-navigate', (event) => {
+    if (event.isMainFrame || event.url.startsWith(`${PREVIEW_SCHEME}:`) || event.url.startsWith('about:')) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(event.url)) void shell.openExternal(event.url);
+  });
   win.once('ready-to-show', () => win.show());
   void win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   return win;
@@ -151,6 +162,8 @@ function main(): void {
   const engineRoot = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked') : appRoot;
   const engines = new EngineService(settings, appRoot, engineRoot);
   const workspace = new Workspace(() => settings().workspace);
+  const preview = new PreviewServer(() => settings().workspace);
+  preview.listen();
   const builtIn = new BuiltInBrowser(
     () => window,
     (state) => send('studio:pageState', state),
@@ -222,6 +235,7 @@ function main(): void {
   handle('writeFile', (file: string, text: string) => workspace.write(file, text));
   handle('createFile', (dir: string, name: string) => workspace.create(dir, name));
   handle('createFolder', (dir: string, name: string) => workspace.mkdir(dir, name));
+  handle('previewDrafts', (drafts: Record<string, string>) => preview.setDrafts(drafts));
   handle('createHookScript', async () => {
     const folder = settings().workspace;
     if (!folder) throw new Error('Open a folder first.');
@@ -412,6 +426,8 @@ const smokeOut =
 // A smoke run must not read, or leave behind, a real user's settings — and
 // must be free to start while the app itself is open.
 if (smokeOut !== undefined) app.setPath('userData', path.join(app.getPath('temp'), 'manul-browser-studio-smoke-profile'));
+
+registerPreviewScheme();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

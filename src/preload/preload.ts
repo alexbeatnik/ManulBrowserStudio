@@ -23,6 +23,7 @@ const api: StudioApi = {
   createFile: call('createFile'),
   createFolder: call('createFolder'),
   createHookScript: call('createHookScript'),
+  previewDrafts: call('previewDrafts'),
   openDemo: call('openDemo'),
   demoOffer: call('demoOffer'),
   engine: call('engine'),

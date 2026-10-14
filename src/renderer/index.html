@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:"
+      content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; frame-src manul-preview:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: manul-preview:; font-src 'self' data:"
     />
     <title>Manul Browser Studio</title>
     <link rel="stylesheet" href="renderer.css" />
@@ -118,6 +118,7 @@
             </p>
           </div>
           <div id="editor"></div>
+          <div id="preview" class="hidden" tabindex="-1"></div>
           <div id="diff" class="hidden">
             <div class="pane-actions">
               <strong id="diff-title"></strong>

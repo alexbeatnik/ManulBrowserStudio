@@ -233,7 +233,8 @@ export type MenuCommand =
   | 'step-through'
   | 'stop'
   | 'format'
-  | 'run-line';
+  | 'run-line'
+  | 'toggle-preview';
 
 export interface StudioApi {
   getSettings(): Promise<Settings>;
@@ -250,6 +251,11 @@ export interface StudioApi {
   createFile(dir: string, name: string): Promise<string>;
   /** Creates a folder in `dir`; resolves to its path. */
   createFolder(dir: string, name: string): Promise<string>;
+  /**
+   * The unsaved text of open files, for the preview of an HTML file to show
+   * in place of what is on disk. Replaces what was given last time.
+   */
+  previewDrafts(drafts: Record<string, string>): Promise<void>;
   /** Creates a starter hook script at the top of the open folder; resolves to its path. */
   createHookScript(): Promise<string>;
   /**

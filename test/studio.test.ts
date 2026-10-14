@@ -12,11 +12,13 @@ import { parseHunt, StepLocator } from '../src/core/huntDoc';
 import { PAUSE_MARKER, VARS_MARKER, parseStdoutLine } from '../src/core/runner';
 import { DEMO_FIRST_HUNT, DEMO_FOLDER, openDemo, placeDemo, SITE_TOKEN } from '../src/main/demo';
 import { builtInNode, plainForCmd } from '../src/main/hookRuntime';
+import { PreviewServer } from '../src/main/preview';
 import { sanitise, SettingsStore } from '../src/main/settings';
 import { toAddress } from '../src/shared/address';
 import { DEFAULT_SETTINGS } from '../src/shared/api';
 import { isInside, Workspace } from '../src/main/workspace';
 import { isPackageName, parsePackageSpecs } from '../src/shared/packages';
+import { previewFile, previewKind, previewUrl } from '../src/shared/preview';
 import { quote, runnableLine, stepForElement, verifyForElement } from '../src/shared/steps';
 
 // ── the debug protocol ──────────────────────────────────────────────────────
@@ -368,4 +370,57 @@ test("every block a demo hunt borrows is in the page object it names", () => {
     }
   }
   assert.ok(borrowed > 0);
+});
+
+// ── the preview ─────────────────────────────────────────────────────────────
+
+test('HTML and Markdown files can be previewed, and nothing else', () => {
+  assert.equal(previewKind('site/index.html'), 'html');
+  assert.equal(previewKind('C:\\shop\\Cart.HTM'), 'html');
+  assert.equal(previewKind('README.md'), 'markdown');
+  assert.equal(previewKind('notes.markdown'), 'markdown');
+  assert.equal(previewKind('hunts/01.hunt'), undefined);
+  assert.equal(previewKind('html'), undefined);
+});
+
+test('a file is previewed at an address its neighbours resolve against', () => {
+  const windows = 'C:\\Users\\Ada Lovelace\\Manul Demo\\site\\index.html';
+  const url = previewUrl(windows);
+  assert.equal(url, 'manul-preview://files/C%3A/Users/Ada%20Lovelace/Manul%20Demo/site/index.html');
+  assert.equal(previewFile(url), windows);
+  assert.equal(previewFile(new URL('shop.css', url).href), 'C:\\Users\\Ada Lovelace\\Manul Demo\\site\\shop.css');
+  assert.equal(previewFile(new URL('../README.md#top', url).href), 'C:\\Users\\Ada Lovelace\\Manul Demo\\README.md');
+
+  const posix = '/home/ada/demo/site/index.html';
+  assert.equal(previewFile(previewUrl(posix)), posix);
+  assert.equal(previewFile(new URL('img/a#b.png', previewUrl(posix)).href), '/home/ada/demo/site/img/a');
+
+  assert.equal(previewFile('https://files/C%3A/x.html'), undefined);
+  assert.equal(previewFile('manul-preview://elsewhere/x.html'), undefined);
+  assert.equal(previewFile('manul-preview://files/'), undefined);
+});
+
+test('the preview serves the open folder, with unsaved text in place of the file', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-preview-'));
+  const root = path.join(dir, 'project');
+  fs.mkdirSync(path.join(root, 'site'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'site', 'index.html'), '<p>on disk</p>');
+  fs.writeFileSync(path.join(root, 'site', 'shop.css'), 'p { color: red }');
+  fs.writeFileSync(path.join(dir, 'secret.txt'), 'not yours');
+  const server = new PreviewServer(() => root);
+
+  const page = await server.respond(previewUrl(path.join(root, 'site', 'index.html')));
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type') ?? '', /^text\/html/);
+  assert.equal(await page.text(), '<p>on disk</p>');
+
+  server.setDrafts({ [path.join(root, 'site', 'index.html')]: '<p>typed</p>' });
+  assert.equal(await (await server.respond(previewUrl(path.join(root, 'site', 'index.html')))).text(), '<p>typed</p>');
+  const css = await server.respond(previewUrl(path.join(root, 'site', 'shop.css')));
+  assert.equal(css.headers.get('content-type'), 'text/css; charset=utf-8');
+
+  // Outside the folder, by its own path or by climbing out of it.
+  assert.equal((await server.respond(previewUrl(path.join(dir, 'secret.txt')))).status, 404);
+  assert.equal((await server.respond(`${previewUrl(path.join(root, 'site'))}/%2E%2E/%2E%2E/secret.txt`)).status, 404);
+  assert.equal((await server.respond(previewUrl(path.join(root, 'site', 'gone.js')))).status, 404);
 });

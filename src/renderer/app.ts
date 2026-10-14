@@ -19,6 +19,7 @@ import { MANUL_ICON } from './icons';
 import { completionsAt, setUpScriptLanguages } from './languages';
 import { Libraries } from './libraries';
 import { PagePanel } from './page';
+import { PreviewView } from './preview';
 import { Panels, stoppedByAuthor } from './panels';
 
 type RunState = 'idle' | 'running' | 'paused';
@@ -67,6 +68,7 @@ class App {
       if (pane === 'git') void this.git?.refresh();
     });
 
+    const preview = new PreviewView($('preview'), { openFile: (file) => void this.openFile(file) });
     this.editor = new EditorView($('editor'), $('editor-tabs'), {
       onActivate: (path) => {
         this.explorer.setActive(path);
@@ -78,7 +80,7 @@ class App {
         $('status-position').textContent = `Ln ${line}, Col ${column}`;
       },
       confirmClose: (path) => this.confirmClose(path),
-    });
+    }, preview);
     this.explorer = new Explorer($('tree'), (file) => void this.openFile(file));
     this.panels = new Panels(this.showBottom, (line, file = this.runFile) => void this.revealLine(file, line));
     this.page = new PagePanel({
@@ -680,6 +682,8 @@ class App {
         return this.debug('explain-next');
       case 'breakpoint':
         return this.editor.toggleBreakpoint();
+      case 'toggle-preview':
+        return this.editor.setPreview();
     }
   }
 
@@ -728,6 +732,7 @@ class App {
     editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => this.command('save'));
     editor.addCommand(KeyCode.F9, () => this.command('breakpoint'));
     editor.addCommand(KeyCode.F10, () => this.command('next'));
+    editor.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyV, () => this.command('toggle-preview'));
     document.addEventListener('keydown', (e) => {
       if (e.key === 'F10' && this.runState === 'paused') {
         e.preventDefault();
@@ -784,6 +789,7 @@ class App {
       libraries: [...document.querySelectorAll('#lib-list .lib')].map((r) => r.textContent ?? ''),
       huntIcons: document.querySelectorAll('#tree .row.hunt .ficon img').length,
       tabIcons: document.querySelectorAll('#editor-tabs .tab .ficon').length,
+      previewing: this.editor.previewing,
       log: $('log').textContent ?? '',
       hasShot: !!$('shot').getAttribute('src'),
       still: $('shot-host').classList.contains('still'),
