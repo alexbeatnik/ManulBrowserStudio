@@ -13,7 +13,7 @@
   --warn: #e0a458;
   --info: #6aa9e9;
   --mono: 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
-  --sidebar-w: 250px;
+  --sidebar-w: 270px;
   --page-w: 400px;
   --bottom-h: 230px;
   --map-h: 45%;
@@ -245,6 +245,18 @@ button:focus-visible,
   color: var(--text);
   border-bottom-color: var(--accent);
   background: rgba(240, 174, 90, 0.07);
+}
+/* Five tabs in a narrow column: closer together, and scrolled rather than
+   cut off when the column is narrower still. */
+#sidebar > .tabs {
+  gap: 0;
+  padding: 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#sidebar > .tabs button {
+  flex: none;
+  padding-inline: 8px;
 }
 .tabs button .count {
   margin-left: 5px;
@@ -1259,4 +1271,136 @@ table.kv td:last-child {
 }
 #shot-host.built-in.still #browser-host {
   pointer-events: none;
+}
+
+/* ── tests ────────────────────────────────────────────────────────────────── */
+
+#tests.active {
+  display: flex;
+  flex-direction: column;
+}
+#tests > .pane-actions {
+  gap: 6px;
+}
+#tests > .pane-actions button {
+  height: 26px;
+  padding-inline: 9px;
+}
+#tests-all {
+  margin: 0 2px 0 4px;
+}
+#tests-summary {
+  padding: 0 12px 4px;
+  font-size: 12px;
+}
+#tests-summary:empty {
+  display: none;
+}
+#tests-list {
+  flex: 1;
+  min-height: 40px;
+  overflow: auto;
+  padding: 0 8px 12px;
+}
+#tests-list h3 {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.test-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  border-radius: 3px;
+}
+.test-row:hover {
+  background: var(--bg-hover);
+}
+.test-row .show {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.test-row .show:hover {
+  background: transparent;
+}
+.test-row .state {
+  flex: none;
+  width: 12px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--dim);
+}
+.test-row.passed .state {
+  color: var(--pass);
+}
+.test-row.failed .state,
+.test-row.error .state {
+  color: var(--fail);
+}
+.test-row.running .state {
+  color: var(--accent);
+  animation: test-running 1s ease-in-out infinite alternate;
+}
+.test-row.queued .state,
+.test-row.stopped .state {
+  color: var(--warn);
+}
+@keyframes test-running {
+  to {
+    opacity: 0.3;
+  }
+}
+.test-row .name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.test-row .detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+  font-size: 12px;
+}
+.test-row.failed .detail,
+.test-row.error .detail {
+  color: var(--fail);
+}
+.test-row .run {
+  flex: none;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+  visibility: hidden;
+}
+.test-row:hover .run,
+.test-row .run:focus-visible,
+.test-row.running .run {
+  visibility: visible;
+}
+
+/* Where the steps of one file begin, in a run of several. */
+.result.file {
+  cursor: default;
+  grid-template-columns: 1fr;
+  font-weight: 600;
+  background: var(--bg-raised);
 }

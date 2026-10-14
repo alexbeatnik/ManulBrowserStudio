@@ -66,6 +66,17 @@ export interface DirEntry {
   dir: boolean;
 }
 
+/** A hunt that is a test: one no other hunt borrows blocks from. */
+export interface TestFile {
+  /** Where it is on disk. */
+  file: string;
+  /** From the top of the open folder, with forward slashes. */
+  path: string;
+  /** What its `@title:` says; '' when it says nothing. */
+  title: string;
+  tags: string[];
+}
+
 export interface EngineStatus {
   found: boolean;
   path: string;
@@ -234,6 +245,7 @@ export type MenuCommand =
   | 'stop'
   | 'format'
   | 'run-line'
+  | 'run-all-tests'
   | 'toggle-preview';
 
 export interface StudioApi {
@@ -256,6 +268,8 @@ export interface StudioApi {
    * in place of what is on disk. Replaces what was given last time.
    */
   previewDrafts(drafts: Record<string, string>): Promise<void>;
+  /** The hunts of the open folder that are tests, in order. */
+  listTests(): Promise<TestFile[]>;
   /** Creates a starter hook script at the top of the open folder; resolves to its path. */
   createHookScript(): Promise<string>;
   /**

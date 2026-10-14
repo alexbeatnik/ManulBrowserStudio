@@ -9,7 +9,7 @@ import * as path from 'path';
 import { DirEntry } from '../shared/api';
 
 /** Folders that are never worth listing in an explorer. */
-const HIDDEN = new Set(['.git', 'node_modules', '__pycache__', '.venv', 'venv']);
+export const HIDDEN = new Set(['.git', 'node_modules', '__pycache__', '.venv', 'venv']);
 
 export function isInside(root: string, target: string): boolean {
   if (!root) return false;

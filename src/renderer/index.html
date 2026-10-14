@@ -54,6 +54,7 @@
       <aside id="sidebar">
         <nav class="tabs" data-tabs="sidebar" role="tablist" aria-label="Sidebar panels">
           <button data-tab="files" class="active">Files</button>
+          <button data-tab="tests" id="tests-tab">Tests</button>
           <button data-tab="steps">Steps</button>
           <button data-tab="libraries">Libraries</button>
           <button data-tab="git" id="git-tab">Git</button>
@@ -66,6 +67,17 @@
             <button id="new-folder" class="quiet" title="New folder (Ctrl+Shift+N)">+ Folder</button>
           </div>
           <div id="tree" class="tree"></div>
+        </section>
+        <section id="tests" class="pane">
+          <div class="pane-actions">
+            <input type="checkbox" id="tests-all" title="Tick every test, or none" aria-label="Tick every test" />
+            <button id="tests-run-all" class="primary" title="Run every test, one after another (Ctrl+F5)" disabled>&#9654; All</button>
+            <button id="tests-run-selected" title="Run the ticked tests, one after another" disabled>&#9654; Ticked</button>
+            <span class="spacer"></span>
+            <button id="tests-refresh" class="quiet" title="Look for tests again">&#8635;</button>
+          </div>
+          <div id="tests-summary" class="dim"></div>
+          <div id="tests-list"></div>
         </section>
         <section id="steps" class="pane">
           <input id="palette-filter" type="search" placeholder="Filter steps" />

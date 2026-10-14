@@ -108,6 +108,9 @@ interface Snapshot {
   huntIcons: number;
   tabIcons: number;
   previewing: boolean;
+  /** Each row of the Tests tab, as `file|state`. */
+  tests: string[];
+  testsBusy: boolean;
   log: string;
   hasShot: boolean;
   still: boolean;
@@ -186,12 +189,7 @@ export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltIn
     const shopPage = path.join(demo, 'site', 'index.html');
     await js(`window.__studio.openFile(${JSON.stringify(shopPage)})`);
     s = await until('the shop page to open', (x) => x.active === shopPage, 10_000);
-    check('an HTML file opens as its text', !s.previewing);
-    // The same command twice within a moment is taken for one key press
-    // arriving twice (App.command), and the second is dropped.
-    await new Promise((r) => setTimeout(r, 300));
-    await command('toggle-preview');
-    s = await until('the shop page to be previewed', (x) => x.previewing, 5_000);
+    check('an HTML file opens as a page', s.previewing);
     // The page is a frame served from the folder: its stylesheet and script
     // come with it, and the script draws the shop.
     const drawn = await (async (): Promise<string> => {
@@ -213,9 +211,12 @@ export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltIn
     })();
     check('an HTML preview runs the page with its stylesheet and script', /^styled [1-9]/.test(drawn), drawn);
     await shoot('0-html-preview');
+    // The same command twice within a moment is taken for one key press
+    // arriving twice (App.command), and the second is dropped.
     await new Promise((r) => setTimeout(r, 300));
     await command('toggle-preview');
-    s = await until('the shop page to show its text again', (x) => !x.previewing, 5_000);
+    s = await until('the shop page to show its text', (x) => !x.previewing, 5_000);
+    check('an HTML file can be shown as its text', !s.previewing);
     await js(`window.__studio.openFile(${JSON.stringify(demoHunt('01-first-order.hunt'))})`);
     // What each hunt of the demo comes to: 02 is the one with a step to fix.
     const expected: Array<[string, number, number]> = [
@@ -241,6 +242,42 @@ export async function runSmoke(win: BrowserWindow, dir: string, builtIn: BuiltIn
       await new Promise((r) => setTimeout(r, 300));
     }
     await shoot('0-demo-run');
+
+    // ── the Tests tab ───────────────────────────────────────────────────────
+    // Every hunt of the demo, and none of the page objects they borrow from;
+    // the ones ticked are run one after another, and each says how it went.
+    await js("document.getElementById('tests-tab').click()");
+    s = await until('the tests to be listed', (x) => x.tests.length > 0, 10_000);
+    const listed = s.tests.map((t) => path.relative(demo, t.split('|')[0]).split(path.sep).join('/'));
+    check(
+      "the Tests tab lists the demo's hunts and not its page objects",
+      listed.join(',') === expected.map(([name]) => `hunts/${name}`).join(','),
+      listed.join(', '),
+    );
+    const testRow = (name: string): string =>
+      `[...document.querySelectorAll('#tests-list .test-row')].find((r) => r.dataset.file === ${JSON.stringify(demoHunt(name))})`;
+    const stateOf = (x: Snapshot, name: string): string =>
+      x.tests.find((t) => t.startsWith(`${demoHunt(name)}|`))?.split('|')[1] ?? 'missing';
+    await js(`${testRow('01-first-order.hunt')}.querySelector('input').click()`);
+    await js(`${testRow('02-find-the-bug.hunt')}.querySelector('input').click()`);
+    await js("document.getElementById('tests-run-selected').click()");
+    await until('the ticked tests to start', (x) => x.testsBusy, 15_000);
+    s = await until('the ticked tests to end', (x) => !x.testsBusy && x.runState === 'idle', 180_000);
+    // 03 and 04 keep what their runs above came to: a run of a test from the
+    // editor is told to the Tests tab too.
+    const states = expected.map(([name]) => stateOf(s, name)).join(', ');
+    check('each ticked test says how it went', states === 'passed, failed, passed, passed', states);
+    check(
+      'the ticked tests are run one after another, and only they, their results in one list',
+      s.results === expected[0][1] + expected[1][1] && s.summary === 'Tests: 1 passed, 1 failed',
+      `${s.results} results · ${s.summary}`,
+    );
+    await shoot('0-tests');
+    await js(`${testRow('04-delivery-date.hunt')}.querySelector('.run').click()`);
+    await until('one test to start', (x) => x.testsBusy, 15_000);
+    s = await until('one test to end', (x) => !x.testsBusy && x.runState === 'idle', 120_000);
+    check('a test can be run on its own', stateOf(s, '04-delivery-date.hunt') === 'passed', stateOf(s, '04-delivery-date.hunt'));
+    await js("document.querySelector('[data-tab=\"files\"]').click()");
 
     // ── the built-in browser ────────────────────────────────────────────────
     // The same hunts, in the page that is in the panel: the engine is not

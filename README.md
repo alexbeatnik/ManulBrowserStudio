@@ -41,11 +41,11 @@ the status bar — so this needs no Node on the machine either.
 **Other files.** Python, Go, JSON, HTML, CSS, Markdown and the rest are
 coloured; JavaScript and TypeScript have completion as well. Every kind of
 file has its icon in the tree and on its tab, and a hunt has Manul Browser's.
-An HTML or Markdown file can be looked at as its text or as what it makes —
-*Code* and *Preview* on the right of the tabs, or Ctrl+Shift+V. An HTML page
-is shown with its stylesheets, scripts and pictures from the folder, and with
-the unsaved text of any open file in place of what is on disk; a link out of
-it opens in the system browser. Markdown opens formatted, with its code
+An HTML or Markdown file opens as what it makes, and can be looked at as its
+text — *Code* and *Preview* on the right of the tabs, or Ctrl+Shift+V. An HTML
+page is shown with its stylesheets, scripts and pictures from the folder, and
+with the unsaved text of any open file in place of what is on disk; a link out
+of it opens in the system browser. Markdown is shown formatted, with its code
 coloured as the editor colours it; a link to another file in the folder opens
 that file.
 
@@ -54,6 +54,13 @@ as it finishes, with its duration or its error written after the line; the
 Results panel lists the steps with their scores, and for a failed one the
 elements on the page that came closest. The engine's own output is under
 Output.
+
+**Tests.** The Tests tab lists every hunt of the folder that is a test — a
+`.hunt` file no other hunt borrows blocks from with `@import`, so page objects
+are left out. Tick the ones to run and press *Ticked*, or *All* (Ctrl+F5), and
+they run one after another, their steps gathered in the Results panel under a
+heading per file; ▶ on a row runs that one alone. Each row says what its last
+run came to — a run with F5 included — and Stop leaves the rest unrun.
 
 **Debugger.** Click left of a line number (or F9) for a breakpoint, F6 to run
 to it, F7 to pause before every step. While paused: Continue (F5), Step (F10),

@@ -14,6 +14,7 @@ import { DEMO_FIRST_HUNT, DEMO_FOLDER, openDemo, placeDemo, SITE_TOKEN } from '.
 import { builtInNode, plainForCmd } from '../src/main/hookRuntime';
 import { PreviewServer } from '../src/main/preview';
 import { sanitise, SettingsStore } from '../src/main/settings';
+import { findTests, huntHeader } from '../src/main/tests';
 import { toAddress } from '../src/shared/address';
 import { DEFAULT_SETTINGS } from '../src/shared/api';
 import { isInside, Workspace } from '../src/main/workspace';
@@ -423,4 +424,55 @@ test('the preview serves the open folder, with unsaved text in place of the file
   assert.equal((await server.respond(previewUrl(path.join(dir, 'secret.txt')))).status, 404);
   assert.equal((await server.respond(`${previewUrl(path.join(root, 'site'))}/%2E%2E/%2E%2E/secret.txt`)).status, 404);
   assert.equal((await server.respond(previewUrl(path.join(root, 'site', 'gone.js')))).status, 404);
+});
+
+// ── the tests of a folder ───────────────────────────────────────────────────
+
+test("a hunt's header gives its title, tags and what it imports", () => {
+  const header = huntHeader(
+    [
+      '@title: A full cart',
+      '@tags: cart, smoke',
+      "@import: Open the shop, Add the product from '../pages/shop.hunt'",
+      '@import: Pay from "../pages/checkout.hunt"',
+      'STEP 1: Go',
+      'DONE.',
+    ].join('\n'),
+  );
+  assert.equal(header.title, 'A full cart');
+  assert.deepEqual(header.tags, ['cart', 'smoke']);
+  assert.deepEqual(header.imports, ['../pages/shop.hunt', '../pages/checkout.hunt']);
+  assert.deepEqual(huntHeader('STEP 1: Go\nDONE.'), { title: '', tags: [], imports: [] });
+});
+
+test("the demo's tests are its hunts, and not the page objects they borrow from", async () => {
+  const tests = await findTests(DEMO);
+  assert.deepEqual(
+    tests.map((t) => t.path),
+    ['hunts/01-first-order.hunt', 'hunts/02-find-the-bug.hunt', 'hunts/03-full-cart.hunt', 'hunts/04-delivery-date.hunt'],
+  );
+  assert.equal(tests[2].title, 'A full cart');
+  assert.equal(tests[2].file, path.join(DEMO, 'hunts', '03-full-cart.hunt'));
+});
+
+test('tests are looked for in every folder but the ones an explorer hides', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-tests-'));
+  const write = (rel: string, text: string): void => {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root, rel), text);
+  };
+  write('login.hunt', "@import: Sign in from 'blocks/Auth.hunt'\nSTEP 1: Sign in\n    USE Sign in\nDONE.");
+  // Named with other case than the import uses: still the same file on Windows.
+  write(process.platform === 'win32' ? 'blocks/auth.hunt' : 'blocks/Auth.hunt', 'STEP 1: Sign in\nDONE.');
+  write('deep/er/10-later.hunt', 'DONE.');
+  write('deep/er/9-sooner.hunt', 'DONE.');
+  write('node_modules/pkg/x.hunt', 'DONE.');
+  write('.cache/y.hunt', 'DONE.');
+  write('notes.txt', 'not a hunt');
+  const tests = await findTests(root);
+  assert.deepEqual(
+    tests.map((t) => t.path),
+    ['deep/er/9-sooner.hunt', 'deep/er/10-later.hunt', 'login.hunt'],
+  );
+  assert.deepEqual(await findTests(''), []);
 });

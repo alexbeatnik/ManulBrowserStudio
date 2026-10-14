@@ -24,6 +24,7 @@ const api: StudioApi = {
   createFolder: call('createFolder'),
   createHookScript: call('createHookScript'),
   previewDrafts: call('previewDrafts'),
+  listTests: call('listTests'),
   openDemo: call('openDemo'),
   demoOffer: call('demoOffer'),
   engine: call('engine'),

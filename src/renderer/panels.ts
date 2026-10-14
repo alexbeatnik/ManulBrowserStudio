@@ -60,7 +60,19 @@ export class Panels {
     if (atEnd) this.results.scrollTop = this.results.scrollHeight;
   }
 
-  addStep(step: StepResult, line: number | undefined): void {
+  /** Heads the steps of one file, among others run one after another. */
+  addFile(file: string): void {
+    this.block = '';
+    this.append(h('div', { class: 'result file', text: file.split(/[\\/]/).pop() ?? file, title: file }));
+  }
+
+  /** Says, above the results, what a run of several files came to. */
+  summarise(text: string): void {
+    this.summary.textContent = text;
+  }
+
+  /** A step of `file` finished; the run's file when not given. */
+  addStep(step: StepResult, line: number | undefined, file?: string): void {
     if ((step.step_block ?? '') !== this.block) {
       this.block = step.step_block ?? '';
       if (this.block) this.append(h('div', { class: 'result block', text: this.block }));
@@ -103,7 +115,7 @@ export class Panels {
         row.append(h('div', { class: 'near', text: `closest on the page: ${list}` }));
       }
     }
-    if (line !== undefined) this.makeRevealable(row, line, step.step);
+    if (line !== undefined) this.makeRevealable(row, line, step.step, file);
     this.append(row);
   }
 

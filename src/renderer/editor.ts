@@ -145,8 +145,8 @@ export class EditorView {
         marks: [],
         paused: [],
         kind,
-        // Markdown is mostly read; HTML is mostly written.
-        previewing: kind === 'markdown',
+        // Opened to be looked at; Code is a click away.
+        previewing: !!kind,
       };
       this.tabs.set(path, tab);
     }

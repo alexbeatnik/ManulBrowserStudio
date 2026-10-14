@@ -5,6 +5,7 @@
 import './styles.css';
 import * as monaco from 'monaco-editor';
 import type { CatalogueEntry } from '../core/catalogue';
+import type { HuntResult } from '../core/runner';
 import type { BrowserName, MenuCommand, RunEvent, ScreenshotMode, Settings } from '../shared/api';
 import { borrowedBlock, runnableLine, stepForElement, verifyForElement } from '../shared/steps';
 import { ask, choose, tell } from './dialogs';
@@ -21,6 +22,7 @@ import { Libraries } from './libraries';
 import { PagePanel } from './page';
 import { PreviewView } from './preview';
 import { Panels, stoppedByAuthor } from './panels';
+import { TestExplorer, TestState } from './tests';
 
 type RunState = 'idle' | 'running' | 'paused';
 
@@ -36,6 +38,7 @@ class App {
   private readonly libraries: Libraries;
   private readonly git: GitPane;
   private readonly diff: DiffView;
+  private readonly tests: TestExplorer;
   private readonly showBottom: (pane: string) => void;
   private readonly showSidebar: (pane: string) => void;
 
@@ -53,6 +56,13 @@ class App {
   private quitting = false;
   /** The person asked for the current run to be stopped. */
   private stopping = false;
+  /** The result the current run gave, once it has given one. */
+  private result?: HuntResult;
+  /**
+   * Tests being run one after another: the files, and how far along. The
+   * one being run is `runFile`.
+   */
+  private batch?: { files: string[]; next: number; passed: number; failed: number };
   private lastCommand = { name: '', at: 0 };
 
   constructor() {
@@ -66,6 +76,7 @@ class App {
       // The pane is looked at: what it shows should be how things are now.
       // (Asked by the tabs once before the pane itself exists.)
       if (pane === 'git') void this.git?.refresh();
+      if (pane === 'tests') void this.tests?.refresh();
     });
 
     const preview = new PreviewView($('preview'), { openFile: (file) => void this.openFile(file) });
@@ -106,6 +117,10 @@ class App {
     studio.onPackageLog((line) => this.panels.addLog(line));
 
     this.diff = new DiffView((file) => void this.openFile(file));
+    this.tests = new TestExplorer({
+      run: (files) => void this.runTests(files),
+      open: (file) => void this.openFile(file),
+    });
     this.git = new GitPane({
       beforeChange: () => this.saveAll(),
       afterChange: () => this.readAgain(),
@@ -124,6 +139,7 @@ class App {
     window.addEventListener('focus', () => {
       void this.explorer.refresh();
       void this.git.refresh();
+      void this.tests.refresh();
     });
 
     $<HTMLImageElement>('welcome-logo').src = MANUL_ICON;
@@ -159,6 +175,7 @@ class App {
     void this.libraries.showRuntime();
     void this.libraries.refresh(this.settings.workspace);
     void this.git.refresh(this.settings.workspace);
+    void this.tests.refresh(this.settings.workspace);
 
     // The demo project, when it has just been asked for. With nothing else to
     // open it is opened; a person with a folder of their own open keeps it.
@@ -210,6 +227,7 @@ class App {
     $('run-controls').classList.toggle('hidden', this.runState === 'paused');
     $('debug-controls').classList.toggle('hidden', this.runState !== 'paused');
     $<HTMLButtonElement>('stop').disabled = idle;
+    this.tests.setBusy(!idle || !!this.batch);
     $('status').className = this.runState === 'idle' ? '' : this.runState;
 
     const welcome = $('welcome');
@@ -334,6 +352,7 @@ class App {
     void this.libraries.refresh(folder);
     this.diff.close();
     void this.git.refresh(folder);
+    void this.tests.refresh(folder);
   }
 
   async openFile(file: string): Promise<void> {
@@ -377,6 +396,7 @@ class App {
       }
     }
     await this.explorer.refresh();
+    void this.tests.refresh();
   }
 
   private async save(path = this.editor.activePath): Promise<boolean> {
@@ -386,6 +406,8 @@ class App {
       await studio.writeFile(path, this.editor.text(path));
       this.editor.markSaved(path, version);
       void this.git.refresh();
+      // What it imports decides whether it, and what it names, are tests.
+      if (path.toLowerCase().endsWith('.hunt')) void this.tests.refresh();
       return true;
     } catch (err) {
       await tell('Could not save the file', reason(err));
@@ -405,6 +427,7 @@ class App {
       if (name.toLowerCase().endsWith('.hunt')) await studio.writeFile(file, STARTER(name.replace(/\.hunt$/i, '')));
       this.explorer.reveal(dir);
       await this.explorer.refresh();
+      void this.tests.refresh();
       await this.openFile(file);
     } catch (err) {
       await tell('Could not create the file', reason(err));
@@ -518,7 +541,7 @@ class App {
   private async run(mode: 'run' | 'debug' | 'step'): Promise<void> {
     if (this.runState === 'paused') return this.debug('continue');
     const file = this.editor.activePath;
-    if (this.runState !== 'idle' || !file || !this.editor.activeIsHunt) return;
+    if (this.runState !== 'idle' || this.batch || !file || !this.editor.activeIsHunt) return;
     // The engine reads the file from disk.
     if (this.editor.isDirty(file) && !(await this.save(file))) return;
     // Saving took a moment, and the key may have been pressed again in it.
@@ -545,6 +568,98 @@ class App {
     }
   }
 
+  /**
+   * Runs tests one after another, their results gathered in one list. Stop
+   * ends the one that is running and leaves the rest unrun.
+   */
+  private async runTests(files: string[]): Promise<void> {
+    if (this.runState !== 'idle' || this.batch || !files.length) return;
+    // The engine reads each file from disk, and what it imports with it.
+    if (!(await this.saveAll())) return;
+    // Saving took a moment, and the button may have been pressed again in it.
+    if (this.runState !== 'idle' || this.batch) return;
+    this.batch = { files, next: 0, passed: 0, failed: 0 };
+    this.stopping = false;
+    for (const file of files) this.tests.setOutcome(file, 'queued');
+    this.panels.reset();
+    this.showBottom('results');
+    await this.runNextTest();
+  }
+
+  private async runNextTest(): Promise<void> {
+    const batch = this.batch;
+    if (!batch) return;
+    if (this.stopping || batch.next >= batch.files.length) return this.endTests();
+    const file = batch.files[batch.next++];
+    this.runFile = file;
+    this.editor.clearMarks(file);
+    this.panels.addFile(file);
+    this.tests.setOutcome(file, 'running');
+    this.setRunState('running');
+    this.status(
+      batch.files.length > 1
+        ? `Running ${basename(file)} — ${batch.next} of ${batch.files.length}…`
+        : `Running ${basename(file)}…`,
+    );
+    try {
+      await studio.startRun({ file, mode: 'run', breakLines: [] });
+    } catch (err) {
+      // No run, so no end of one to go on from: the next is started here.
+      batch.failed++;
+      this.tests.setOutcome(file, 'error', reason(err));
+      this.panels.addLog(`${basename(file)} could not be run: ${reason(err)}`);
+      this.setRunState('idle');
+      await this.runNextTest();
+    }
+  }
+
+  private endTests(): void {
+    const batch = this.batch;
+    if (!batch) return;
+    this.batch = undefined;
+    // What was still waiting its turn when Stop was pressed was not run.
+    const unrun = batch.files.slice(batch.next);
+    for (const file of unrun) this.tests.setOutcome(file, 'idle');
+    if (batch.files.length > 1) {
+      const text = [
+        `Tests: ${batch.passed} passed`,
+        `${batch.failed} failed`,
+        unrun.length ? `${unrun.length} not run` : '',
+      ]
+        .filter(Boolean)
+        .join(', ');
+      this.status(text);
+      this.panels.summarise(text);
+    }
+    this.refreshChrome();
+  }
+
+  /** Tells the Tests tab how the run that has just ended went. */
+  private testEnded(error: string | undefined): void {
+    const result = this.result;
+    let state: TestState;
+    let detail: string;
+    if (error) {
+      state = 'error';
+      detail = error;
+    } else if (result) {
+      state = result.success ? 'passed' : 'failed';
+      detail = `${result.passed}/${result.total_steps} steps · ${duration(result.total_duration_ms)}`;
+    } else if (this.stopping) {
+      state = 'stopped';
+      detail = 'stopped before it had a result';
+    } else {
+      state = 'error';
+      detail = 'ended before it had a result; see Output';
+    }
+    // A test run with F5 is told about too.
+    this.tests.setOutcome(this.runFile, state, detail);
+    if (!this.batch) return;
+    if (state === 'passed') this.batch.passed++;
+    else if (state !== 'stopped') this.batch.failed++;
+    void this.runNextTest();
+  }
+
   private debug(action: 'next' | 'continue' | 'explain-next'): void {
     if (this.runState !== 'paused') return;
     void studio.debug(action);
@@ -565,6 +680,7 @@ class App {
       case 'started':
         this.stepsDone = 0;
         this.verdict = '';
+        this.result = undefined;
         this.lineTime.clear();
         // The built-in browser was made new for the run, live session and all.
         if (this.settings.browser === 'builtin') this.page.renewed();
@@ -577,7 +693,7 @@ class App {
       case 'step': {
         const { step, line } = event;
         this.stepsDone++;
-        this.panels.addStep(step, line);
+        this.panels.addStep(step, line, this.runFile);
         if (line !== undefined && !stoppedByAuthor(step)) {
           const spent = (this.lineTime.get(line) ?? 0) + step.duration_ms;
           this.lineTime.set(line, spent);
@@ -603,6 +719,7 @@ class App {
         break;
       case 'result': {
         const { result } = event;
+        this.result = result;
         this.panels.finish(result);
         this.verdict = result.success
           ? `Run passed: ${result.passed} steps`
@@ -635,6 +752,7 @@ class App {
           this.status('The run ended before it had a result. What the engine said is under Output.');
           this.showBottom('output');
         }
+        this.testEnded(event.error);
         break;
     }
   }
@@ -682,6 +800,8 @@ class App {
         return this.debug('explain-next');
       case 'breakpoint':
         return this.editor.toggleBreakpoint();
+      case 'run-all-tests':
+        return void this.runTests(this.tests.files);
       case 'toggle-preview':
         return this.editor.setPreview();
     }
@@ -790,6 +910,10 @@ class App {
       huntIcons: document.querySelectorAll('#tree .row.hunt .ficon img').length,
       tabIcons: document.querySelectorAll('#editor-tabs .tab .ficon').length,
       previewing: this.editor.previewing,
+      tests: [...document.querySelectorAll<HTMLElement>('#tests-list .test-row')].map(
+        (r) => `${r.dataset.file ?? ''}|${[...r.classList].find((c) => c !== 'test-row') ?? ''}`,
+      ),
+      testsBusy: !!this.batch,
       log: $('log').textContent ?? '',
       hasShot: !!$('shot').getAttribute('src'),
       still: $('shot-host').classList.contains('still'),

@@ -26,6 +26,7 @@ import { builtInNode } from './hookRuntime';
 import { LiveService } from './live';
 import { PackageService } from './packages';
 import { PreviewServer, registerPreviewScheme } from './preview';
+import { findTests } from './tests';
 import { RunService } from './runs';
 import { SettingsStore } from './settings';
 import { runSmoke } from './smoke';
@@ -77,6 +78,8 @@ function buildMenu(): Menu {
         { label: 'Stop', accelerator: 'Shift+F5', click: menu('stop') },
         { type: 'separator' },
         { label: 'Run Line in Live Session', accelerator: 'CmdOrCtrl+Enter', click: menu('run-line') },
+        { type: 'separator' },
+        { label: 'Run All Tests', accelerator: 'CmdOrCtrl+F5', click: menu('run-all-tests') },
       ],
     },
     {
@@ -235,6 +238,7 @@ function main(): void {
   handle('writeFile', (file: string, text: string) => workspace.write(file, text));
   handle('createFile', (dir: string, name: string) => workspace.create(dir, name));
   handle('createFolder', (dir: string, name: string) => workspace.mkdir(dir, name));
+  handle('listTests', () => findTests(settings().workspace));
   handle('previewDrafts', (drafts: Record<string, string>) => preview.setDrafts(drafts));
   handle('createHookScript', async () => {
     const folder = settings().workspace;
